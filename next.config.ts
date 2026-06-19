@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/live/:path*",
-        destination: "http://155.117.46.151:9200/:path*",
+        destination: "https://api.gogizmo.co/:path*",
       },
     ];
   },
