@@ -18,10 +18,10 @@ interface ApiError extends Error {
 const getBaseUrl = (): string => {
   // In browser environment
   if (typeof window !== "undefined") {
-    return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    return process.env.NEXT_PUBLIC_API_URL || "http://155.117.46.151:9200";
   }
   // In server environment
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  return process.env.NEXT_PUBLIC_API_URL || "http://155.117.46.151:9200";
 };
 
 /**
