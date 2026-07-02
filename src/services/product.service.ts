@@ -4,14 +4,10 @@
  */
 
 import { apiGet, apiPost } from "./api-client";
-import type { Product, ApiListResponse, ApiSingleResponse } from "@/types";
 
-/**
- * Fetch all products from backend
- */
-export async function fetchProductsFromAPI(): Promise<Product[]> {
+export async function fetchProductsFromAPI(): Promise<any[]> {
   try {
-    const response = await apiGet<ApiListResponse<Product>>("/api/Product/GetAll");
+    const response = await apiGet<any>("/api/Product/GetAll");
     return response.data || [];
   } catch (error) {
     console.error("Failed to fetch products from API:", error);
@@ -19,12 +15,9 @@ export async function fetchProductsFromAPI(): Promise<Product[]> {
   }
 }
 
-/**
- * Create a new product
- */
 export async function createProductAPI(
-  data: Omit<Product, "id" | "createdAt">
-): Promise<Product> {
+  data: any
+): Promise<any> {
   try {
     const payload = {
       productName: data.name || data.productName,
@@ -35,7 +28,7 @@ export async function createProductAPI(
       status: data.status,
     };
 
-    const response = await apiPost<ApiSingleResponse<Product>>(
+    const response = await apiPost<any>(
       "/api/Product/Add",
       payload
     );
@@ -46,13 +39,10 @@ export async function createProductAPI(
   }
 }
 
-/**
- * Get unique brands from products
- */
 export async function fetchBrandsFromAPI(): Promise<string[]> {
   try {
     const products = await fetchProductsFromAPI();
-    const brands = [...new Set(products.map((p) => p.brand))];
+    const brands = [...new Set(products.map((p: any) => p.brand))];
     return brands.sort();
   } catch (error) {
     console.error("Failed to fetch brands:", error);

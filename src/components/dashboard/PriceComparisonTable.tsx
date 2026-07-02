@@ -6,20 +6,48 @@ import {
   getSortedRowModel,
   getPaginationRowModel,
   flexRender,
-  createColumnHelper,
+  type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
 import { Search, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { useProductsWithPrices, useBrands } from "@/hooks/useQueries";
 import { Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { StatusBadge } from "@/components/ui/Badge";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/States";
-import { formatPrice, formatPriceGap, getCompetitorPriceColor } from "@/lib/utils";
-import type { ProductWithPrices } from "@/types";
+import { formatPrice } from "@/lib/utils";
+import type { MergedProduct } from "@/types";
 
-const columnHelper = createColumnHelper<ProductWithPrices>();
+const COMPETITOR_COLS = [
+  { key: "AmazonPrice" as const, urlKey: "AmazonURL" as const, label: "Amazon" },
+  { key: "FlipkartPrice" as const, urlKey: "FlipkartURL" as const, label: "Flipkart" },
+  { key: "PoorvikaPrice" as const, urlKey: "PoorvikaURL" as const, label: "Poorvika" },
+  { key: "CromaPrice" as const, urlKey: "CromaURL" as const, label: "Croma" },
+  { key: "RelianceDigitalPrice" as const, urlKey: "RelianceDigitalURL" as const, label: "Reliance" },
+  { key: "SangeethaMobilesPrice" as const, urlKey: "SangeethaMobilesURL" as const, label: "Sangeetha" },
+  { key: "TheChennaiMobilesPrice" as const, urlKey: "TheChennaiMobilesURL" as const, label: "Chennai Mobiles" },
+  { key: "sathyaPrice" as const, urlKey: "sathyaURL" as const, label: "Sathya" },
+];
+
+function PriceCell({ price, url, isLowest, isHighest }: { price: number | null; url: string | null; isLowest: boolean; isHighest: boolean }) {
+  if (price === null || price === undefined) {
+    return <span className="text-gray-300">—</span>;
+  }
+  let bgClass = "";
+  if (isLowest) bgClass = "bg-green-50";
+  else if (isHighest) bgClass = "bg-red-50";
+
+  return (
+    <a
+      href={url || "#"}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-block px-2 py-1 rounded ${bgClass} text-green-700 font-medium hover:underline ${!url ? "pointer-events-none" : ""}`}
+    >
+      {formatPrice(price)}
+    </a>
+  );
+}
 
 export function PriceComparisonTable() {
   const [search, setSearch] = useState("");
@@ -35,122 +63,70 @@ export function PriceComparisonTable() {
     status: status || undefined,
   });
 
-  const columns = useMemo(
-    () => [
-      columnHelper.accessor("name", {
-        header: "Product Name",
-        cell: (info) => <span className="font-medium text-gray-900">{info.getValue()}</span>,
-      }),
-      columnHelper.accessor("brand", {
+  const columns: ColumnDef<MergedProduct>[] = useMemo(() => {
+    const cols: ColumnDef<MergedProduct>[] = [
+      {
+        accessorKey: "ItemName",
+        header: "Product",
+        enableSorting: true,
+        cell: (info) => <span className="font-medium text-gray-900">{info.getValue() as string}</span>,
+      },
+      {
+        accessorKey: "Brand",
         header: "Brand",
-        cell: (info) => <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-md">{info.getValue()}</span>,
-      }),
-      columnHelper.accessor("amazonPrice", {
-        header: "Amazon",
-        cell: (info) => {
-          const price = info.getValue();
-          const url = info.row.original.amazonUrl;
-          if (price != null && url) {
-            return (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${getCompetitorPriceColor(price, info.row.original.ourPrice)} hover:underline cursor-pointer`}
-              >
-                {formatPrice(price)}
-              </a>
-            );
-          }
-          return <span className="text-gray-400">—</span>;
-        },
-      }),
-      columnHelper.accessor("flipkartPrice", {
-        header: "Flipkart",
-        cell: (info) => {
-          const price = info.getValue();
-          const url = info.row.original.flipkartUrl;
-          if (price != null && url) {
-            return (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${getCompetitorPriceColor(price, info.row.original.ourPrice)} hover:underline cursor-pointer`}
-              >
-                {formatPrice(price)}
-              </a>
-            );
-          }
-          return <span className="text-gray-400">—</span>;
-        },
-      }),
-      columnHelper.accessor("poorvikaPrice", {
-        header: "Poorvika",
-        cell: (info) => {
-          const price = info.getValue();
-          const url = info.row.original.poorvikaUrl;
-          if (price != null && url) {
-            return (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${getCompetitorPriceColor(price, info.row.original.ourPrice)} hover:underline cursor-pointer`}
-              >
-                {formatPrice(price)}
-              </a>
-            );
-          }
-          return <span className="text-gray-400">—</span>;
-        },
-      }),
-      columnHelper.accessor("sangeethaPrice", {
-        header: "Sangeetha (Our Price)",
-        cell: (info) => {
-          const price = info.getValue();
-          const url = info.row.original.sangeethaUrl;
-          if (price != null && url) {
-            return (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-blue-700 hover:underline cursor-pointer"
-              >
-                {formatPrice(price)}
-              </a>
-            );
-          }
-          return <span className="text-gray-400">—</span>;
-        },
-      }),
-      columnHelper.accessor("lowestPrice", {
-        header: "Lowest Price",
-        cell: (info) => <span className="font-semibold text-gray-900">{formatPrice(info.getValue())}</span>,
-      }),
-      columnHelper.accessor("lowestPlatform", {
-        header: "Lowest Platform",
-        cell: (info) => {
-          const platform = info.getValue();
-          if (!platform) return <span className="text-gray-400">—</span>;
-          const isUs = platform === "Sangeetha";
-          return (
-            <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${isUs ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-              {platform}
-            </span>
-          );
-        },
-      }),
-      columnHelper.accessor("createdAt", {
-        id: "lastUpdated",
-        header: "Last Updated",
-        cell: () => <span className="text-xs text-gray-500">Today 11:42 AM</span>,
-      }),
-    ],
-    []
-  );
+        enableSorting: true,
+        cell: (info) => <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-md">{info.getValue() as string}</span>,
+      },
+    ];
 
+    for (const { key, urlKey, label } of COMPETITOR_COLS) {
+      cols.push({
+        accessorKey: key,
+        header: label,
+        enableSorting: false,
+        cell: (info) => {
+          const row = info.row.original;
+          const price = row[key];
+          const url = row[urlKey];
+          const allPrices = COMPETITOR_COLS.map((c) => row[c.key]).filter((p): p is number => p !== null && p > 0);
+          const isLowest = price !== null && price > 0 && price === Math.min(...allPrices);
+          const isHighest = price !== null && price > 0 && price === Math.max(...allPrices);
+          return <PriceCell price={price} url={url} isLowest={isLowest} isHighest={isHighest} />;
+        },
+      });
+    }
+
+    cols.push({
+      accessorKey: "lowestPrice",
+      header: "Lowest Price",
+      enableSorting: true,
+      cell: (info) => <span className="font-semibold text-gray-900">{formatPrice(info.getValue() as number | null)}</span>,
+    });
+
+    cols.push({
+      accessorKey: "lowestPlatform",
+      header: "Lowest Platform",
+      enableSorting: true,
+      cell: (info) => {
+        const platform = info.getValue() as string | null;
+        if (!platform) return <span className="text-gray-400">—</span>;
+        return (
+          <span className="text-xs px-2 py-0.5 rounded-md font-medium bg-green-100 text-green-700">
+            {platform}
+          </span>
+        );
+      },
+    });
+
+    cols.push({
+      id: "lastUpdated",
+      header: "Last Updated",
+      enableSorting: true,
+      cell: () => <span className="text-xs text-gray-500">Today</span>,
+    });
+
+    return cols;
+  }, []);
 
   const table = useReactTable({
     data: products ?? [],
@@ -179,26 +155,18 @@ export function PriceComparisonTable() {
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-200">
         <div className="relative w-56">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input
-            placeholder="Search products..."
-            className="pl-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <Input placeholder="Search products..." className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={brand} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBrand(e.target.value)} className="w-36">
           <option value="">All brands</option>
           {brands?.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
+            <option key={b} value={b}>{b}</option>
           ))}
         </Select>
         <Select value={status} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatus(e.target.value)} className="w-36">
-          <option value="">All status</option>
-          <option value="winning">Winning</option>
-          <option value="losing">Losing</option>
-          <option value="matching">Matching</option>
+          <option value="">All</option>
+          <option value="available">Available</option>
+          <option value="missing">Missing Competitors</option>
         </Select>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />
@@ -207,13 +175,9 @@ export function PriceComparisonTable() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={9} />
+        <TableSkeleton rows={6} cols={12} />
       ) : isError ? (
-        <ErrorState
-          title="Failed to load products"
-          description="Unable to fetch price comparison data. Please check your connection and try again."
-          onRetry={() => refetch()}
-        />
+        <ErrorState title="Failed to load products" description="Unable to fetch price comparison data." onRetry={() => refetch()} />
       ) : totalRows === 0 ? (
         <EmptyState title="No products match your filters" description="Try adjusting your search or filters." />
       ) : (

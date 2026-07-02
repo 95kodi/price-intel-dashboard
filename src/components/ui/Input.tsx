@@ -28,9 +28,10 @@ Input.displayName = "Input";
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
+  error?: string;
 }
 
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(({ className, label, children, ...props }, ref) => {
+export const Select = forwardRef<HTMLSelectElement, SelectProps>(({ className, label, error, children, ...props }, ref) => {
   return (
     <div className="flex flex-col gap-1">
       {label && <label className="text-xs font-medium text-gray-600">{label}</label>}
@@ -38,12 +39,14 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({ className, l
         ref={ref}
         className={cn(
           "h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all",
+          error && "border-red-300 focus:ring-red-400",
           className
         )}
         {...props}
       >
         {children}
       </select>
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 });
