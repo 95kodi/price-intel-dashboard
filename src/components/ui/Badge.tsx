@@ -30,7 +30,7 @@ export function StatusBadge({ status, className }: BadgeProps) {
 
 interface GenericBadgeProps {
   children: React.ReactNode;
-  variant?: "default" | "outline" | "secondary";
+  variant?: "default" | "outline" | "secondary" | "success" | "destructive";
   className?: string;
 }
 
@@ -41,6 +41,8 @@ export function Badge({ children, variant = "default", className }: GenericBadge
       variant === "default" && "bg-gray-100 text-gray-700",
       variant === "outline" && "border border-gray-200 text-gray-600",
       variant === "secondary" && "bg-blue-50 text-blue-700",
+      variant === "success" && "bg-green-50 text-green-700",
+      variant === "destructive" && "bg-red-50 text-red-700",
       className
     )}>
       {children}

@@ -7,8 +7,6 @@ import { apiGet } from "./api-client";
 import type {
   PriceComparisonResponse,
   PriceComparisonItem,
-  DashboardSummary,
-  ProductWithPrices,
 } from "@/types";
 
 /**
@@ -54,12 +52,9 @@ export async function fetchPriceComparisonFromAPI(): Promise<PriceComparisonResp
  */
 export function convertComparisonToProductWithPrices(
   items: PriceComparisonItem[]
-): ProductWithPrices[] {
+): any[] {
   return items.map((item) => {
-    // 1. Determine ourPrice (using SangeethaPrice as our baseline)
     const ourPrice = item.SangeethaPrice ?? 0;
-
-    // 2. Map all competitor prices
     const competitorPrices = [
       { competitorId: 1, competitorName: "Amazon", price: item.AmazonPrice, url: item.AmazonURL || "" },
       { competitorId: 2, competitorName: "Flipkart", price: item.FlipkartPrice, url: item.FlipkartURL || "" },
@@ -67,12 +62,10 @@ export function convertComparisonToProductWithPrices(
       { competitorId: 4, competitorName: "Sangeetha", price: item.SangeethaPrice, url: item.SangeethaURL || "" },
     ];
 
-    // 3. Find lowest price among all platforms
     const allPrices = [item.AmazonPrice, item.FlipkartPrice, item.PoorvikaPrice, item.SangeethaPrice]
       .filter((p): p is number => p !== null && p > 0);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : null;
 
-    // 4. Find lowest platform name
     let lowestPlatform: string | null = null;
     if (lowestPrice !== null) {
       if (item.AmazonPrice === lowestPrice) lowestPlatform = "Amazon";
@@ -81,16 +74,12 @@ export function convertComparisonToProductWithPrices(
       else if (item.SangeethaPrice === lowestPrice) lowestPlatform = "Sangeetha";
     }
 
-    // 5. Calculate lowestCompetitorPrice (lowest among Amazon, Flipkart, Poorvika)
     const competitorPricesList = [item.AmazonPrice, item.FlipkartPrice, item.PoorvikaPrice]
       .filter((p): p is number => p !== null && p > 0);
     const lowestCompetitorPrice = competitorPricesList.length > 0 ? Math.min(...competitorPricesList) : null;
-
-    // 6. Calculate priceGap (ourPrice - lowestCompetitorPrice)
     const priceGap = (ourPrice > 0 && lowestCompetitorPrice !== null) ? (ourPrice - lowestCompetitorPrice) : null;
 
-    // 7. Calculate status (winning / losing / matching)
-    let status: "winning" | "losing" | "matching" | "active" | "inactive" = "matching";
+    let status = "matching";
     if (ourPrice > 0 && lowestCompetitorPrice !== null) {
       if (ourPrice < lowestCompetitorPrice) status = "winning";
       else if (ourPrice > lowestCompetitorPrice) status = "losing";
@@ -117,8 +106,6 @@ export function convertComparisonToProductWithPrices(
       sangeethaUrl: item.SangeethaURL,
       lowestPrice,
       lowestPlatform,
-      
-      // Backward compatible fields
       ourPrice,
       competitorPrices,
       lowestCompetitorPrice,
@@ -132,9 +119,9 @@ export function convertComparisonToProductWithPrices(
  * Convert API price comparison response to DashboardSummary
  */
 export function convertComparisonToDashboardSummary(
-  response: PriceComparisonResponse
-): DashboardSummary {
-  const products = convertComparisonToProductWithPrices(response.data);
+  response: any
+): any {
+  const products = convertComparisonToProductWithPrices(response.data || []);
   const totalProducts = products.length;
   
   const winningProducts = products.filter((p) => p.status === "winning").length;
@@ -147,10 +134,11 @@ export function convertComparisonToDashboardSummary(
   const averagePriceGap = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
 
   // Compute coverage data
-  const amazonProducts = response.data.filter((item) => item.AmazonPrice !== null).length;
-  const flipkartProducts = response.data.filter((item) => item.FlipkartPrice !== null).length;
-  const poorvikaProducts = response.data.filter((item) => item.PoorvikaPrice !== null).length;
-  const sangeethaProducts = response.data.filter((item) => item.SangeethaPrice !== null).length;
+    const data = response.data || [];
+    const amazonProducts = data.filter((item: any) => item.AmazonPrice !== null).length;
+    const flipkartProducts = data.filter((item: any) => item.FlipkartPrice !== null).length;
+    const poorvikaProducts = data.filter((item: any) => item.PoorvikaPrice !== null).length;
+    const sangeethaProducts = data.filter((item: any) => item.SangeethaPrice !== null).length;
 
   const getPercentage = (count: number) => (totalProducts > 0 ? Math.round((count / totalProducts) * 100) : 0);
 
@@ -173,7 +161,7 @@ export function convertComparisonToDashboardSummary(
  * Generate notifications from price comparison data
  */
 export function generateNotificationsFromComparison(
-  items: PriceComparisonItem[]
+  items: any[]
 ): Array<{
   type: "danger" | "warning" | "info" | "success";
   title: string;
@@ -193,7 +181,7 @@ export function generateNotificationsFromComparison(
     if (p.status === "losing" && p.priceGap !== null) {
       const gap = Math.abs(p.priceGap);
       const cheaperCompetitor = p.competitorPrices.find(
-        (c) => c.price === p.lowestCompetitorPrice
+        (c: any) => c.price === p.lowestCompetitorPrice
       );
       const competitorName = cheaperCompetitor?.competitorName || "Competitor";
       

@@ -5,7 +5,16 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { PriceComparisonTable } from "@/components/dashboard/PriceComparisonTable";
 import { ScanButton } from "@/components/dashboard/ScanButton";
-import { WinLossPieChart, BrandGapBarChart, CompetitorCoverageChart } from "@/components/charts/DashboardCharts";
+import {
+  CoverageBarChart,
+  LowestPriceWinnerChart,
+  BrandDistributionChart,
+  AveragePriceByCompetitorChart,
+  MissingPriceCoverageChart,
+  CheapestPlatformTrendChart,
+  ProductPriceSpreadChart,
+  PriceGapAnalysisChart,
+} from "@/components/charts/DashboardCharts";
 import { useDashboardSummary } from "@/hooks/useQueries";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -32,9 +41,14 @@ export default function DashboardPage() {
         <KpiCards />
         <PriceComparisonTable />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <WinLossPieChart />
-          <BrandGapBarChart />
-          <CompetitorCoverageChart />
+          <CoverageBarChart />
+          <LowestPriceWinnerChart />
+          <BrandDistributionChart />
+          <AveragePriceByCompetitorChart />
+          <MissingPriceCoverageChart />
+          <CheapestPlatformTrendChart />
+          <ProductPriceSpreadChart />
+          <PriceGapAnalysisChart />
         </div>
       </div>
     </div>

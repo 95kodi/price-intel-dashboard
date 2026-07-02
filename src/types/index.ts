@@ -1,15 +1,67 @@
 export interface Product {
-  id: number;
-  productName?: string;
-  name?: string;
-  brand: string;
-  category: string;
-  currentPrice?: number;
-  ourPrice?: number;
-  price?: number;
-  sku: string;
-  createdAt: string;
-  status: "active" | "inactive";
+  ProductID: number;
+  ItemName: string;
+  Brand: string;
+  Category: string;
+  IsActive: boolean;
+}
+
+export interface PriceComparison {
+  ProductID: number;
+  AmazonPrice: number | null;
+  AmazonURL: string | null;
+  FlipkartPrice: number | null;
+  FlipkartURL: string | null;
+  PoorvikaPrice: number | null;
+  PoorvikaURL: string | null;
+  CromaPrice: number | null;
+  CromaURL: string | null;
+  RelianceDigitalPrice: number | null;
+  RelianceDigitalURL: string | null;
+  SangeethaMobilesPrice: number | null;
+  SangeethaMobilesURL: string | null;
+  TheChennaiMobilesPrice: number | null;
+  TheChennaiMobilesURL: string | null;
+  sathyaPrice: number | null;
+  sathyaURL: string | null;
+}
+
+export interface PriceComparisonResponse {
+  success: boolean;
+  count: number;
+  data: PriceComparison[];
+}
+
+export interface MergedProduct {
+  ProductID: number;
+  ItemName: string;
+  Brand: string;
+  Category: string;
+  AmazonPrice: number | null;
+  AmazonURL: string | null;
+  FlipkartPrice: number | null;
+  FlipkartURL: string | null;
+  PoorvikaPrice: number | null;
+  PoorvikaURL: string | null;
+  CromaPrice: number | null;
+  CromaURL: string | null;
+  RelianceDigitalPrice: number | null;
+  RelianceDigitalURL: string | null;
+  SangeethaMobilesPrice: number | null;
+  SangeethaMobilesURL: string | null;
+  TheChennaiMobilesPrice: number | null;
+  TheChennaiMobilesURL: string | null;
+  sathyaPrice: number | null;
+  sathyaURL: string | null;
+  lowestPrice: number | null;
+  lowestPlatform: string | null;
+}
+
+export interface CompetitorCoverage {
+  competitor: string;
+  count: number;
+  total: number;
+  percentage: number;
 }
 
 export interface Platform {
@@ -71,8 +123,6 @@ export interface ProductWithPrices extends Omit<Product, "id" | "status"> {
   sangeethaUrl: string | null;
   lowestPrice: number | null;
   lowestPlatform: string | null;
-
-  // Backward compatible fields to support existing charts/views
   ourPrice: number;
   competitorPrices: CompetitorPrice[];
   lowestCompetitorPrice: number | null;
@@ -89,7 +139,6 @@ export interface DashboardSummary {
   losingProducts: number;
   matchingProducts: number;
   lastScanTime: string;
-
   amazonCoverage?: { count: number; percentage: number };
   flipkartCoverage?: { count: number; percentage: number };
   poorvikaCoverage?: { count: number; percentage: number };
@@ -120,13 +169,6 @@ export interface BrandPriceGap {
   avgGap: number;
 }
 
-export interface CompetitorCoverage {
-  competitor: string;
-  productCount: number;
-}
-
-// ============ API Response Types ============
-
 export interface ProductPlatform {
   id: number;
   productId: number;
@@ -150,24 +192,14 @@ export interface PriceHistoryEntry {
 export interface PriceComparisonItem {
   ItemCode: string;
   ItemName: string;
-
   AmazonPrice: number | null;
   AmazonURL: string | null;
-
   FlipkartPrice: number | null;
   FlipkartURL: string | null;
-
   PoorvikaPrice: number | null;
   PoorvikaURL: string | null;
-
   SangeethaPrice: number | null;
   SangeethaURL: string | null;
-}
-
-export interface PriceComparisonResponse {
-  success: boolean;
-  count: number;
-  data: PriceComparisonItem[];
 }
 
 export interface ApiListResponse<T> {
