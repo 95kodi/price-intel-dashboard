@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchHtml, fetchHtmlWithBrowser } from "@/lib/http";
+import { fetchHtml, fetchHtmlWithBrowser, isBlockedError } from "@/lib/http";
 import { getParser } from "@/lib/scrapers";
 import { savePrice } from "@/lib/savePrice";
+
+// Browser launches on serverless can take well over the 10s default.
+export const maxDuration = 60;
 
 const REQUIRED_FIELDS = ["url", "platform", "productPlatformId"] as const;
 const BROWSER_FETCH_PLATFORMS = new Set(["croma"]);
@@ -53,7 +56,13 @@ export async function POST(request: NextRequest) {
       console.log(`[${platform}] Using browser fetch...`);
       html = await fetchHtmlWithBrowser(url);
     } else {
-      html = await fetchHtml(url);
+      try {
+        html = await fetchHtml(url);
+      } catch (err) {
+        if (!isBlockedError(err)) throw err;
+        console.log(`[${platform}] Plain fetch blocked, retrying with browser...`);
+        html = await fetchHtmlWithBrowser(url);
+      }
     }
 
     console.log(`[${platform}] HTTP 200`);

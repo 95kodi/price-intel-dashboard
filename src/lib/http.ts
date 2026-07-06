@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -6,7 +6,21 @@ const BROWSER_HEADERS: Record<string, string> = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
+  "Sec-Ch-Ua": '"Chromium";v="131", "Google Chrome";v="131", "Not_A Brand";v="24"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Upgrade-Insecure-Requests": "1",
 };
+
+// Vercel / AWS Lambda have no system browser; use @sparticuz/chromium there.
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+export function isBlockedError(err: unknown): boolean {
+  return err instanceof AxiosError && (err.response?.status === 403 || err.response?.status === 503);
+}
 
 export async function fetchHtml(url: string): Promise<string> {
   const response = await axios.get(url, {
@@ -18,36 +32,47 @@ export async function fetchHtml(url: string): Promise<string> {
   return response.data;
 }
 
-export async function fetchHtmlWithBrowser(url: string): Promise<string> {
+async function launchBrowser() {
   const { chromium } = await import("playwright-core");
-  const channels = ["msedge", "chrome"] as const;
-  let lastError: unknown;
 
-  for (const channel of channels) {
-    let browser;
-
-    try {
-      browser = await chromium.launch({ channel, headless: true });
-      const page = await browser.newPage({
-        userAgent: BROWSER_HEADERS["User-Agent"],
-        locale: "en-IN",
-      });
-
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
-      });
-
-      await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-      return await page.content();
-    } catch (err) {
-      lastError = err;
-    } finally {
-      await browser?.close().catch(() => {});
-    }
+  if (IS_SERVERLESS) {
+    const sparticuz = (await import("@sparticuz/chromium")).default;
+    return chromium.launch({
+      args: sparticuz.args,
+      executablePath: await sparticuz.executablePath(),
+      headless: true,
+    });
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Browser fetch failed");
+  // Local development: reuse an installed Edge/Chrome.
+  const channels = ["msedge", "chrome"] as const;
+  let lastError: unknown;
+  for (const channel of channels) {
+    try {
+      return await chromium.launch({ channel, headless: true });
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("No local browser available");
+}
+
+export async function fetchHtmlWithBrowser(url: string): Promise<string> {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage({
+      userAgent: BROWSER_HEADERS["User-Agent"],
+      locale: "en-IN",
+    });
+
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    return await page.content();
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
