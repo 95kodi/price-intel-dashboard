@@ -116,6 +116,10 @@ if (result.price === null || result.price <= 0) {
 
   console.error("Price extraction failed.");
   console.log("Returned Result:", result);
+  // Surface what actually came back so bot-challenge pages are identifiable in logs.
+  const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? "(no title)";
+  console.log(`[${platform}] Page title: ${pageTitle}`);
+  console.log(`[${platform}] HTML snippet: ${html.replace(/\s+/g, " ").slice(0, 600)}`);
 
   return NextResponse.json(
     { success: false, platform, error: reason, reason },

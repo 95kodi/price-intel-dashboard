@@ -63,6 +63,18 @@ export async function fetchHtmlWithBrowser(url: string): Promise<string> {
     const page = await browser.newPage({
       userAgent: BROWSER_HEADERS["User-Agent"],
       locale: "en-IN",
+      timezoneId: "Asia/Kolkata",
+      viewport: { width: 1366, height: 768 },
+      extraHTTPHeaders: {
+        "Accept-Language": "en-IN,en;q=0.9",
+      },
+    });
+
+    // Basic anti-headless hardening; bot checks look for these first.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "languages", { get: () => ["en-IN", "en"] });
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
     });
 
     await page.goto(url, {
@@ -70,7 +82,11 @@ export async function fetchHtmlWithBrowser(url: string): Promise<string> {
       timeout: 30000,
     });
 
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    // Client-rendered pages: wait until a rupee price shows up in the DOM.
+    await page
+      .waitForFunction(() => /₹\s*[\d,]{4,}/.test(document.body?.innerText ?? ""), { timeout: 15000 })
+      .catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
     return await page.content();
   } finally {
     await browser.close().catch(() => {});
