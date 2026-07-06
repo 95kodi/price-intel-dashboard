@@ -1,13 +1,13 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ScatterChart, Scatter, ComposedChart, Line,
 } from "recharts";
+import { Download, Maximize2, X } from "lucide-react";
 import { useProductsWithPrices, useCompetitorCoverage } from "@/hooks/useQueries";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/States";
-import { formatPrice } from "@/lib/utils";
 
 const COMPETITOR_COLS = [
   { key: "AmazonPrice" as const, label: "Amazon", color: "#f59e0b" },
@@ -20,12 +20,99 @@ const COMPETITOR_COLS = [
   { key: "sathyaPrice" as const, label: "Sathya", color: "#ec4899" },
 ];
 
-function ChartContainer({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+const AXIS_TICK = { fontSize: 11, fill: "#6b7280" };
+const GRID_STROKE = "#f1f5f9";
+
+function downloadCsv(title: string, rows: Array<object>) {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const esc = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [
+    headers.join(","),
+    ...rows.map((r) => headers.map((h) => esc((r as Record<string, unknown>)[h])).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title.toLowerCase().replace(/\s+/g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+interface ChartCardProps {
+  title: string;
+  subtitle?: string;
+  data?: Array<object>;
+  children: (height: number) => ReactNode;
+}
+
+function ChartCard({ title, subtitle, data, children }: ChartCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div className={`bg-white border border-gray-200 rounded-xl p-4 ${className || ""}`}>
-      <h3 className="text-xs font-medium text-gray-500 mb-3">{title}</h3>
-      {children}
-    </div>
+    <>
+      <div className="bg-card border border-line rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-shadow duration-200">
+        <div className="flex items-start gap-2 mb-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-ink tracking-tight">{title}</h3>
+            {subtitle && <p className="text-xs text-ink-muted mt-0.5">{subtitle}</p>}
+          </div>
+          {data && data.length > 0 && (
+            <button
+              onClick={() => downloadCsv(title, data)}
+              title="Download data (CSV)"
+              aria-label={`Download ${title} data`}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-ink hover:bg-gray-50 transition-colors"
+            >
+              <Download size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => setExpanded(true)}
+            title="Expand"
+            aria-label={`Expand ${title}`}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-ink hover:bg-gray-50 transition-colors"
+          >
+            <Maximize2 size={14} />
+          </button>
+        </div>
+        {children(260)}
+      </div>
+
+      {expanded && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6"
+          onClick={() => setExpanded(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
+          <div
+            className="bg-card rounded-2xl border border-line w-full max-w-4xl p-8 shadow-popover"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-2 mb-6">
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-ink tracking-tight">{title}</h3>
+                {subtitle && <p className="text-sm text-ink-muted mt-0.5">{subtitle}</p>}
+              </div>
+              <button
+                onClick={() => setExpanded(false)}
+                aria-label="Close"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-ink hover:bg-gray-50 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {children(440)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -41,21 +128,23 @@ export function CoverageBarChart() {
   if (isError || !coverage) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartContainer title="Product Coverage by Competitor">
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={coverage} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-          <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-          <YAxis dataKey="competitor" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} />
-          <Tooltip />
-          <Bar dataKey="percentage" radius={[0, 4, 4, 0]} maxBarSize={20}>
-            {coverage.map((entry, i) => (
-              <Cell key={i} fill={COMPETITOR_COLS.find((c) => c.label === entry.competitor)?.color || "#2563eb"} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Product Coverage" subtitle="Listing coverage by competitor" data={coverage}>
+      {(height) => (
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={coverage} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID_STROKE} />
+            <XAxis type="number" tick={AXIS_TICK} domain={[0, 100]} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
+            <YAxis dataKey="competitor" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} axisLine={false} tickLine={false} />
+            <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} formatter={(v) => [`${v}%`, "Coverage"]} />
+            <Bar dataKey="percentage" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600}>
+              {coverage.map((entry, i) => (
+                <Cell key={i} fill={COMPETITOR_COLS.find((c) => c.label === entry.competitor)?.color || "#4f46e5"} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </ChartCard>
   );
 }
 
@@ -76,26 +165,31 @@ export function LowestPriceWinnerChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Lowest Price Winner">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Lowest Price Winner">
-      <ResponsiveContainer width="100%" height={260}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip />
-          <Legend iconSize={8} fontSize={11} />
-        </PieChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Lowest Price Winner" subtitle="Who is cheapest most often" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height}>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={3} cornerRadius={4} animationDuration={600}>
+                {data.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend iconSize={8} iconType="circle" />
+            </PieChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }
 
-const BRAND_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#6366f1", "#f97316", "#6b7280"];
+const BRAND_COLORS = ["#4f46e5", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#6366f1", "#f97316", "#6b7280"];
 
 export function BrandDistributionChart() {
   const { products, isLoading, isError, refetch } = useChartData();
@@ -112,22 +206,27 @@ export function BrandDistributionChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Brand Distribution">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Brand Distribution">
-      <ResponsiveContainer width="100%" height={260}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" outerRadius={90} paddingAngle={2}>
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip />
-          <Legend iconSize={8} fontSize={11} />
-        </PieChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Brand Distribution" subtitle="Catalog mix by brand" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height}>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" innerRadius="45%" outerRadius="85%" paddingAngle={3} cornerRadius={4} animationDuration={600}>
+                {data.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend iconSize={8} iconType="circle" />
+            </PieChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }
 
@@ -144,24 +243,29 @@ export function AveragePriceByCompetitorChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Average Price by Competitor">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Average Price by Competitor">
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} />
-          <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-          <Tooltip />
-          <Bar dataKey="avg" radius={[4, 4, 0, 0]} maxBarSize={36}>
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Average Pricing" subtitle="Mean listed price per competitor" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
+              <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+              <YAxis tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+              <Bar dataKey="avg" radius={[6, 6, 0, 0]} maxBarSize={36} animationDuration={600} name="Avg. price">
+                {data.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }
 
@@ -180,19 +284,21 @@ export function MissingPriceCoverageChart() {
   if (isError) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartContainer title="Missing Price Coverage">
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} />
-          <YAxis tick={{ fontSize: 11, fill: "#64748b" }} />
-          <Tooltip />
-          <Legend iconSize={8} fontSize={11} />
-          <Bar dataKey="Available" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Missing" stackId="a" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Missing Products" subtitle="Available vs. missing listings per competitor" data={data}>
+      {(height) => (
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
+            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+            <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+            <Legend iconSize={8} iconType="circle" />
+            <Bar dataKey="Available" stackId="a" fill="#10b981" animationDuration={600} />
+            <Bar dataKey="Missing" stackId="a" fill="#e5e7eb" radius={[6, 6, 0, 0]} animationDuration={600} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </ChartCard>
   );
 }
 
@@ -213,24 +319,29 @@ export function CheapestPlatformTrendChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Cheapest Platform Trend">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Cheapest Platform Trend">
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-          <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} />
-          <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} />
-          <Tooltip />
-          <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Competitor Performance" subtitle="Products won per competitor" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID_STROKE} />
+              <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+              <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} formatter={(v) => [v, "Products won"]} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600}>
+                {data.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }
 
@@ -252,20 +363,25 @@ export function ProductPriceSpreadChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Product Price Spread">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Product Price Spread">
-      <ResponsiveContainer width="100%" height={300}>
-        <ScatterChart margin={{ top: 10, right: 20, left: 80, bottom: 60 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="product" tick={{ fontSize: 9, fill: "#64748b" }} angle={-45} textAnchor="end" height={80} interval={0} />
-          <YAxis dataKey="price" tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-          <Tooltip />
-          <Scatter data={data} fill="#3b82f6" opacity={0.6} />
-        </ScatterChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Price Distribution" subtitle="Individual prices per product across competitors" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height + 40}>
+            <ScatterChart margin={{ top: 10, right: 20, left: 20, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+              <XAxis dataKey="product" tick={{ fontSize: 9, fill: "#6b7280" }} angle={-45} textAnchor="end" height={80} interval={0} />
+              <YAxis dataKey="price" tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Scatter data={data} fill="#4f46e5" opacity={0.55} animationDuration={600} />
+            </ScatterChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }
 
@@ -289,22 +405,27 @@ export function PriceGapAnalysisChart() {
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (data.length === 0) return <ChartContainer title="Price Gap Analysis">No data</ChartContainer>;
 
   return (
-    <ChartContainer title="Price Gap Analysis">
-      <ResponsiveContainer width="100%" height={300}>
-        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 60 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#64748b" }} angle={-45} textAnchor="end" height={80} interval={0} />
-          <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-          <Tooltip />
-          <Legend iconSize={8} fontSize={11} />
-          <Bar dataKey="highest" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={20} name="Highest Price" />
-          <Bar dataKey="lowest" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={20} name="Lowest Price" />
-          <Line dataKey="gap" stroke="#3b82f6" strokeWidth={2} name="Gap" dot={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </ChartContainer>
+    <ChartCard title="Price Gap Analysis" subtitle="Highest vs. lowest price per product" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height + 40}>
+            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
+              <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#6b7280" }} angle={-45} textAnchor="end" height={80} interval={0} />
+              <YAxis tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+              <Legend iconSize={8} iconType="circle" />
+              <Bar dataKey="highest" fill="#ef4444" radius={[6, 6, 0, 0]} maxBarSize={18} name="Highest Price" animationDuration={600} />
+              <Bar dataKey="lowest" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={18} name="Lowest Price" animationDuration={600} />
+              <Line dataKey="gap" stroke="#4f46e5" strokeWidth={2} name="Gap" dot={false} animationDuration={600} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
   );
 }

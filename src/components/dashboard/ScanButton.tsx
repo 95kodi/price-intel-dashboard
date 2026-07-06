@@ -41,8 +41,8 @@ export function ScanButton() {
       </Button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => isComplete && setOpen(false)}>
-          <div className="bg-white rounded-xl border border-gray-200 w-full max-w-sm p-6 text-center" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => isComplete && setOpen(false)}>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-popover w-full max-w-sm p-8 text-center" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-semibold text-gray-900 mb-1">
               {isComplete ? "Scan Complete" : "Running Price Scan"}
             </h2>
@@ -51,7 +51,7 @@ export function ScanButton() {
             </p>
             <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-5">
               <div
-                className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                className="h-full bg-primary rounded-full transition-all duration-300"
                 style={{ width: `${Math.min((currentStep / SCAN_STEPS.length) * 100, 100)}%` }}
               />
             </div>
