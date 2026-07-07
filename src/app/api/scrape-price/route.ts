@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchHtml, fetchHtmlWithBrowser, isBlockedError } from "@/lib/http";
+import { fetchProductPage, hasGateway, BlockedError } from "@/lib/http";
 import { getParser } from "@/lib/scrapers";
 import { savePrice } from "@/lib/savePrice";
 
@@ -51,19 +51,9 @@ export async function POST(request: NextRequest) {
   console.log(`[${platform}] Fetching HTML...`);
 
   try {
-    let html: string;
-    if (BROWSER_FETCH_PLATFORMS.has(platform.toLowerCase())) {
-      console.log(`[${platform}] Using browser fetch...`);
-      html = await fetchHtmlWithBrowser(url);
-    } else {
-      try {
-        html = await fetchHtml(url);
-      } catch (err) {
-        if (!isBlockedError(err)) throw err;
-        console.log(`[${platform}] Plain fetch blocked, retrying with browser...`);
-        html = await fetchHtmlWithBrowser(url);
-      }
-    }
+    const needsBrowser = BROWSER_FETCH_PLATFORMS.has(platform.toLowerCase());
+    if (needsBrowser) console.log(`[${platform}] Using browser fetch...`);
+    const html = await fetchProductPage(url, needsBrowser);
 
     console.log(`[${platform}] HTTP 200`);
     console.log(`[${platform}] HTML Length: ${html.length}`);
@@ -122,7 +112,7 @@ if (result.price === null || result.price <= 0) {
   console.log(`[${platform}] HTML snippet: ${html.replace(/\s+/g, " ").slice(0, 600)}`);
 
   return NextResponse.json(
-    { success: false, platform, error: reason, reason },
+    { success: false, platform, error: reason, reason, pageTitle },
     { status: 422 }
   );
 }
@@ -151,6 +141,17 @@ if (result.price === null || result.price <= 0) {
     console.log(`[${platform}] Done.`);
     return NextResponse.json({ success: true, ...result });
   } catch (err) {
+    if (err instanceof BlockedError) {
+      const hint = hasGateway()
+        ? "The configured scraping gateway was also blocked."
+        : "This host's IP is refused by the site. Set SCRAPER_GATEWAY_URL (scraping API) or SCRAPER_PROXY_URL in the environment.";
+      const message = `${err.message}. ${hint}`;
+      console.error(`[${platform}] ${message}`);
+      return NextResponse.json(
+        { success: false, platform, error: message, reason: message },
+        { status: 422 }
+      );
+    }
     const message = err instanceof Error ? err.message : "Scraping failed";
     console.error(`[${platform}] ${message}`);
     return NextResponse.json(

@@ -59,3 +59,20 @@ All data currently flows through `src/services/api.ts`, which simulates network 
 ## Tech stack
 
 Next.js 15 (App Router), TypeScript, Tailwind CSS v4, TanStack Query v5, TanStack Table v8, Recharts, Lucide Icons.
+
+## Scraping configuration (production)
+
+Marketplaces with bot protection (Amazon, Croma, Reliance Digital) block requests from
+datacenter IPs, so scrapes that work on localhost fail on Vercel. Configure one of these
+environment variables in your deployment to route around the block:
+
+- `SCRAPER_GATEWAY_URL` — a scraping-API endpoint that returns rendered HTML. Use `{url}`
+  as the placeholder for the encoded target, e.g.
+  `https://api.scraperapi.com/?api_key=YOUR_KEY&render=true&url={url}`
+- `SCRAPER_PROXY_URL` — a standard residential/rotating proxy (`http://user:pass@host:port`)
+  used by the headless browser.
+
+Fetch order per scrape: plain HTTP → headless browser → gateway. On serverless, when a
+gateway is configured, blocked platforms go straight to the gateway. Without either
+variable, blocked scrapes fail with an explicit "Blocked by site bot protection" error
+instead of "Price not found".
