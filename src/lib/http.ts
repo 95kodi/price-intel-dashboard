@@ -48,6 +48,10 @@ const BLOCK_MARKERS = [
   "request blocked",
   "captcha",
   "reference #", // Akamai denial pages
+  // Amazon serves its bot-block page as "503 - Service Unavailable Error"
+  "503 - service unavailable",
+  "to discuss automated access",
+  "api-services-support@amazon",
 ];
 
 /** Returns the matched marker when the HTML is a bot-challenge/denial page. */
