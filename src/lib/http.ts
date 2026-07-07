@@ -18,8 +18,58 @@ const BROWSER_HEADERS: Record<string, string> = {
 // Vercel / AWS Lambda have no system browser; use @sparticuz/chromium there.
 const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
+/**
+ * Anti-bot escape hatches for hosts whose IPs the marketplaces block:
+ *
+ * SCRAPER_GATEWAY_URL — a scraping-API endpoint. `{url}` is replaced with the
+ *   encoded target (appended if no placeholder). The gateway must return the
+ *   rendered page HTML, e.g.
+ *   https://api.scraperapi.com/?api_key=KEY&render=true&url={url}
+ *
+ * SCRAPER_PROXY_URL — a standard proxy (http://user:pass@host:port) used by
+ *   the headless browser.
+ */
+const GATEWAY_TEMPLATE = process.env.SCRAPER_GATEWAY_URL || "";
+const PROXY_URL = process.env.SCRAPER_PROXY_URL || "";
+
+export class BlockedError extends Error {
+  constructor(marker: string) {
+    super(`Blocked by site bot protection (${marker})`);
+    this.name = "BlockedError";
+  }
+}
+
+const BLOCK_MARKERS = [
+  "access denied",
+  "pardon our interruption",
+  "robot check",
+  "are you a human",
+  "unusual traffic",
+  "request blocked",
+  "captcha",
+  "reference #", // Akamai denial pages
+];
+
+/** Returns the matched marker when the HTML is a bot-challenge/denial page. */
+export function detectBlockedPage(html: string): string | null {
+  // Real product pages are large; challenge pages are tiny.
+  if (html.length > 100_000) return null;
+  const haystack = html.slice(0, 20_000).toLowerCase();
+  return BLOCK_MARKERS.find((m) => haystack.includes(m)) ?? null;
+}
+
 export function isBlockedError(err: unknown): boolean {
   return err instanceof AxiosError && (err.response?.status === 403 || err.response?.status === 503);
+}
+
+export function hasGateway(): boolean {
+  return GATEWAY_TEMPLATE.length > 0;
+}
+
+function gatewayUrlFor(target: string): string {
+  return GATEWAY_TEMPLATE.includes("{url}")
+    ? GATEWAY_TEMPLATE.replace("{url}", encodeURIComponent(target))
+    : GATEWAY_TEMPLATE + encodeURIComponent(target);
 }
 
 export async function fetchHtml(url: string): Promise<string> {
@@ -32,8 +82,27 @@ export async function fetchHtml(url: string): Promise<string> {
   return response.data;
 }
 
+async function fetchHtmlViaGateway(url: string): Promise<string> {
+  const response = await axios.get(gatewayUrlFor(url), {
+    timeout: 55000, // gateways render pages; give them time
+    responseType: "text",
+  });
+  return response.data;
+}
+
+function playwrightProxy() {
+  if (!PROXY_URL) return undefined;
+  const u = new URL(PROXY_URL);
+  return {
+    server: `${u.protocol}//${u.host}`,
+    username: u.username ? decodeURIComponent(u.username) : undefined,
+    password: u.password ? decodeURIComponent(u.password) : undefined,
+  };
+}
+
 async function launchBrowser() {
   const { chromium } = await import("playwright-core");
+  const proxy = playwrightProxy();
 
   if (IS_SERVERLESS) {
     const sparticuz = (await import("@sparticuz/chromium")).default;
@@ -41,6 +110,7 @@ async function launchBrowser() {
       args: sparticuz.args,
       executablePath: await sparticuz.executablePath(),
       headless: true,
+      proxy,
     });
   }
 
@@ -49,7 +119,7 @@ async function launchBrowser() {
   let lastError: unknown;
   for (const channel of channels) {
     try {
-      return await chromium.launch({ channel, headless: true });
+      return await chromium.launch({ channel, headless: true, proxy });
     } catch (err) {
       lastError = err;
     }
@@ -91,4 +161,39 @@ export async function fetchHtmlWithBrowser(url: string): Promise<string> {
   } finally {
     await browser.close().catch(() => {});
   }
+}
+
+function ensureNotBlocked(html: string): string {
+  const marker = detectBlockedPage(html);
+  if (marker) throw new BlockedError(marker);
+  return html;
+}
+
+/**
+ * Fetch a product page, escalating when the site blocks us:
+ * plain HTTP → headless browser → configured gateway.
+ * Platforms that need JS rendering skip the plain-HTTP tier.
+ */
+export async function fetchProductPage(url: string, needsBrowser: boolean): Promise<string> {
+  if (!needsBrowser) {
+    try {
+      return ensureNotBlocked(await fetchHtml(url));
+    } catch (err) {
+      if (!(isBlockedError(err) || err instanceof BlockedError)) throw err;
+      console.log("Plain fetch blocked, escalating...");
+    }
+  }
+
+  // On serverless a datacenter-launched browser is usually blocked too;
+  // when a gateway exists, go straight to it and save the cold start.
+  if (!(IS_SERVERLESS && hasGateway())) {
+    try {
+      return ensureNotBlocked(await fetchHtmlWithBrowser(url));
+    } catch (err) {
+      if (!(err instanceof BlockedError) || !hasGateway()) throw err;
+      console.log("Browser fetch blocked, retrying via gateway...");
+    }
+  }
+
+  return ensureNotBlocked(await fetchHtmlViaGateway(url));
 }
