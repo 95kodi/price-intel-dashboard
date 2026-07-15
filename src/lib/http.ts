@@ -144,6 +144,15 @@ export async function fetchHtmlWithBrowser(url: string): Promise<string> {
       },
     });
 
+    // Ad/analytics iframes navigate constantly, which makes page.content()
+    // throw "page is navigating"; they also slow the load down. Block them.
+    const AD_HOSTS =
+      /doubleclick|googlesyndication|googletagmanager|google-analytics|googleadservices|adservice|facebook\.|hotjar|clarity\.ms|criteo|taboola|outbrain|amazon-adsystem/i;
+    await page.route(
+      (u) => AD_HOSTS.test(u.hostname),
+      (route) => route.abort()
+    );
+
     // Basic anti-headless hardening; bot checks look for these first.
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
@@ -161,7 +170,38 @@ export async function fetchHtmlWithBrowser(url: string): Promise<string> {
       .waitForFunction(() => /₹\s*[\d,]{4,}/.test(document.body?.innerText ?? ""), { timeout: 15000 })
       .catch(() => {});
     await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
-    return await page.content();
+    // page.content() throws if a client-side navigation is mid-flight;
+    // wait for the navigation to settle and retry before giving up.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await page.content();
+      } catch (err) {
+        lastError = err;
+        if (process.env.SCRAPER_DEBUG) {
+          console.log(`  [debug] content() attempt ${attempt} failed at url=${page.url()}: ${(err as Error).message}`);
+        }
+        await page.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(1000);
+      }
+    }
+    // Last resort: raw CDP evaluate — unlike page.content()/page.evaluate(),
+    // it has no "page is navigating" guard, so a churning ad iframe or SPA
+    // re-render can't block it.
+    try {
+      const client = await page.context().newCDPSession(page);
+      const { result } = await client.send("Runtime.evaluate", {
+        expression: "document.documentElement.outerHTML",
+        returnByValue: true,
+      });
+      if (typeof result.value === "string" && result.value.length > 0) return result.value;
+      throw new Error("CDP evaluate returned no HTML");
+    } catch (err) {
+      if (process.env.SCRAPER_DEBUG) {
+        console.log(`  [debug] CDP fallback failed: ${(err as Error).message}`);
+      }
+      throw lastError instanceof Error ? lastError : new Error("Could not read page content");
+    }
   } finally {
     await browser.close().catch(() => {});
   }
