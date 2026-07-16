@@ -116,8 +116,8 @@ export async function runScan(
   // http.ts reads gateway/proxy env vars at import time, so set them first.
   if (config.gatewayUrl) process.env.SCRAPER_GATEWAY_URL = config.gatewayUrl;
   if (config.proxyUrl) process.env.SCRAPER_PROXY_URL = config.proxyUrl;
-  const { fetchProductPage } = await import("../../src/lib/http");
-  const { getParser } = await import("../../src/lib/scrapers");
+  const { fetchProductPage } = await import("./lib/http");
+  const { getParser } = await import("./lib/scrapers");
 
   const totals: ScanTotals = { scanned: 0, succeeded: 0, failed: 0, failures: [] };
 
