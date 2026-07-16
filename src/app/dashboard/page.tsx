@@ -4,7 +4,6 @@ import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { PriceComparisonTable, exportCsv } from "@/components/dashboard/PriceComparisonTable";
-import { ScanButton } from "@/components/dashboard/ScanButton";
 import { DownloadAgentButton } from "@/components/dashboard/DownloadAgentButton";
 import {
   CoverageBarChart,
@@ -32,7 +31,6 @@ export default function DashboardPage() {
         title="Dashboard"
         subtitle={summary ? `Last updated ${formatDateTime(summary.lastScanTime)}` : "Loading latest scan..."}
       >
-        <ScanButton />
         <DownloadAgentButton />
         <Button variant="outline" size="sm" onClick={() => exportCsv(products ?? [])} disabled={!products?.length}>
           <Download size={14} />

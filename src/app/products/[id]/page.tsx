@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Pencil, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -10,7 +10,6 @@ import { formatPrice } from "@/lib/utils";
 import { getProductPlatformUrls, type ProductPlatformUrlResponse } from "@/services/productPlatformUrlService";
 import { getPlatformPriceHistory, type PlatformPriceEntry } from "@/services/platformPriceHistoryService";
 import { getProductById, type CatalogProduct } from "@/services/productService";
-import { useToast } from "@/components/ui/Toast";
 import { EditProductUrlDialog } from "@/components/products/EditProductUrlDialog";
 import { AddProductUrlDialog } from "@/components/products/AddProductUrlDialog";
 
@@ -32,9 +31,6 @@ export default function ProductDetailsPage() {
   const [isError, setIsError] = useState(false);
   const [editTarget, setEditTarget] = useState<PlatformSummary | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [updatingPrices, setUpdatingPrices] = useState<Set<number>>(new Set());
-  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
-  const { toast } = useToast();
 
   const fetchData = async () => {
     if (!productId) return;
@@ -53,75 +49,6 @@ export default function ProductDetailsPage() {
       setIsError(true);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const updatePrice = async (p: PlatformSummary) => {
-    if (!p.url) return;
-    setUpdatingPrices((prev) => new Set(prev).add(p.productPlatformId));
-    try {
-      const payload = {
-        url: p.url,
-        platform: p.name,
-        productPlatformId: p.productPlatformId,
-      };
-      console.log("Scrape request:", payload);
-      const res = await fetch("/api/scrape-price", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Update failed");
-      toast(`Price updated: ${formatPrice(data.price)}`);
-      const priceResult = await getPlatformPriceHistory(productId);
-      setPriceEntries(priceResult ?? []);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to update price";
-      toast(msg, "error");
-    } finally {
-      setUpdatingPrices((prev) => {
-        const next = new Set(prev);
-        next.delete(p.productPlatformId);
-        return next;
-      });
-    }
-  };
-
-  const refreshAllPrices = async () => {
-    setIsRefreshingAll(true);
-    try {
-      for (const p of sorted) {
-        if (!p.url) continue;
-        setUpdatingPrices((prev) => new Set(prev).add(p.productPlatformId));
-        try {
-          const res = await fetch("/api/scrape-price", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              url: p.url,
-              platform: p.name,
-              productPlatformId: p.productPlatformId,
-            }),
-          });
-          const data = await res.json();
-          if (!data.success) throw new Error(data.error || "Update failed");
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Failed";
-          toast(`${p.name}: ${msg}`, "error");
-        } finally {
-          setUpdatingPrices((prev) => {
-            const next = new Set(prev);
-            next.delete(p.productPlatformId);
-            return next;
-          });
-        }
-      }
-      const priceResult = await getPlatformPriceHistory(productId);
-      setPriceEntries(priceResult ?? []);
-      toast("Prices updated successfully");
-    } finally {
-      setIsRefreshingAll(false);
     }
   };
 
@@ -219,13 +146,7 @@ export default function ProductDetailsPage() {
       {sorted.length > 0 ? (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Price Comparison</CardTitle>
-              <Button variant="outline" size="sm" onClick={refreshAllPrices} disabled={isRefreshingAll}>
-                <RefreshCw size={14} className={isRefreshingAll ? "animate-spin" : ""} />
-                Refresh All Prices
-              </Button>
-            </div>
+            <CardTitle>Price Comparison</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -266,22 +187,6 @@ export default function ProductDetailsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-3">
-                          <button
-                            onClick={() => updatePrice(p)}
-                            disabled={!p.url || updatingPrices.has(p.productPlatformId)}
-                            title={!p.url ? "No URL configured for this platform" : "Update Price"}
-                            className="inline-flex items-center gap-1 text-green-600 hover:underline text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {updatingPrices.has(p.productPlatformId) ? (
-                              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                            ) : (
-                              <RefreshCw size={12} />
-                            )}
-                            Update Price
-                          </button>
                           <button
                             onClick={() => setEditTarget(p)}
                             className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"
@@ -336,21 +241,6 @@ export default function ProductDetailsPage() {
                     <ExternalLink size={14} />
                     Open Product Page
                   </a>
-                  <button
-                    onClick={() => updatePrice(p)}
-                    disabled={updatingPrices.has(p.productPlatformId)}
-                    className="inline-flex items-center gap-1.5 text-sm text-green-600 hover:underline font-medium disabled:opacity-50"
-                  >
-                    {updatingPrices.has(p.productPlatformId) ? (
-                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <RefreshCw size={14} />
-                    )}
-                    Update Price
-                  </button>
                   <button
                     onClick={() => setEditTarget(p)}
                     className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium"
