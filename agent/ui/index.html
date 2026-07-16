@@ -151,9 +151,11 @@
   });
 
   window.agent.onEvent((e) => {
-    if (e.type === "products") {
+    if (e.type === "discovery") {
+      $("current-text").textContent = `Checking URL mappings… ${e.checked}/${e.total}`;
+    } else if (e.type === "products") {
       total = e.total;
-      $("current-text").textContent = `${total} product(s) to scan`;
+      $("current-text").textContent = `${total} product(s) with URLs to scan`;
     } else if (e.type === "product") {
       done = e.index;
       $("progress-fill").style.width = total ? `${Math.round((e.index / total) * 100)}%` : "0%";

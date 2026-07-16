@@ -66,7 +66,9 @@ export interface ScanOptions {
 }
 
 export interface ScanCallbacks {
-  /** Fired when the product list has loaded. */
+  /** Fired while checking which products have platform URLs mapped. */
+  onDiscovery?(checked: number, total: number): void;
+  /** Fired when discovery is done; total = products that have URLs. */
   onStart?(totalProducts: number): void;
   /** Fired when a product's scan begins. */
   onProduct?(index: number, total: number, name: string): void;
@@ -107,6 +109,25 @@ async function savePrice(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Runs `worker` over `items` with at most `concurrency` in flight. */
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await worker(items[i]);
+      }
+    })
+  );
+  return results;
+}
+
 export async function runScan(
   config: AgentConfig,
   opts: ScanOptions,
@@ -121,22 +142,21 @@ export async function runScan(
 
   const totals: ScanTotals = { scanned: 0, succeeded: 0, failed: 0, failures: [] };
 
-  let products = (await getJson<Product[]>(`${config.apiBase}/products/`)).filter(
+  const products = (await getJson<Product[]>(`${config.apiBase}/products/`)).filter(
     (p) => p.IsActive
   );
-  if (opts.limit && opts.limit > 0) products = products.slice(0, opts.limit);
-  cb.onStart?.(products.length);
 
-  for (const [i, product] of products.entries()) {
-    if (isCancelled()) break;
-    cb.onProduct?.(i, products.length, product.ItemName);
-
-    let platforms: PlatformUrlItem[];
+  // Discovery: find which products actually have platform URLs mapped, so
+  // the scan only iterates those. Concurrent — the catalog can be large.
+  let checked = 0;
+  const discovered = await mapConcurrent(products, 8, async (product) => {
+    if (isCancelled()) return null;
     try {
       const res = await getJson<{ Platforms?: PlatformUrlItem[] | null }>(
         `${config.apiBase}/product-platform-url/product/${product.ProductID}`
       );
-      platforms = (res.Platforms ?? []).filter((p) => p.ProductURL);
+      const platforms = (res.Platforms ?? []).filter((p) => p.ProductURL);
+      return platforms.length > 0 ? { product, platforms } : null;
     } catch (err) {
       totals.failed++;
       const failure = {
@@ -146,8 +166,21 @@ export async function runScan(
       };
       totals.failures.push(failure);
       cb.onResult?.({ ...failure, ok: false });
-      continue;
+      return null;
+    } finally {
+      cb.onDiscovery?.(++checked, products.length);
     }
+  });
+
+  let scannable = discovered.filter(
+    (d): d is { product: Product; platforms: PlatformUrlItem[] } => d !== null
+  );
+  if (opts.limit && opts.limit > 0) scannable = scannable.slice(0, opts.limit);
+  cb.onStart?.(scannable.length);
+
+  for (const [i, { product, platforms }] of scannable.entries()) {
+    if (isCancelled()) break;
+    cb.onProduct?.(i, scannable.length, product.ItemName);
 
     for (const p of platforms) {
       if (isCancelled()) break;
