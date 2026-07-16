@@ -7,13 +7,18 @@ function toNumber(value: string | undefined): number | null {
 }
 
 export function parse(html: string): ParsedPrice {
+  // In Flipkart's ppd block, "fsp" is the actual selling price;
+  // "finalPrice" is (confusingly) the pre-discount price. Match "fsp"
+  // lazily \u2014 a greedy [^}]* would backtrack onto the wrong key.
   const priceMatch =
-    html.match(/"ppd"\s*:\s*\{[^}]*"(?:fsp|finalPrice)"\s*:\s*"?([\d,]+)"?/i) ??
-    html.match(/"(?:fsp|finalPrice|sellingPrice|specialPrice|price)"\s*:\s*"?([\d,]+)"?/i) ??
+    html.match(/"ppd"\s*:\s*\{[^}]*?"fsp"\s*:\s*"?([\d,]+)"?/i) ??
+    html.match(/"fsp"\s*:\s*"?([\d,]+)"?/i) ??
+    html.match(/"ppd"\s*:\s*\{[^}]*?"finalPrice"\s*:\s*"?([\d,]+)"?/i) ??
+    html.match(/"(?:finalPrice|sellingPrice|price)"\s*:\s*"?([\d,]+)"?/i) ??
     html.match(/(?:\u20b9|&#x20B9;|&#8377;|Rs\.?)\s*([\d,]+)/i);
 
   const mrpMatch =
-    html.match(/"ppd"\s*:\s*\{[^}]*"mrp"\s*:\s*"?([\d,]+)"?/i) ??
+    html.match(/"ppd"\s*:\s*\{[^}]*?"mrp"\s*:\s*"?([\d,]+)"?/i) ??
     html.match(/"(?:mrp|maximumRetailPrice|listPrice)"\s*:\s*"?([\d,]+)"?/i);
 
   const price = toNumber(priceMatch?.[1]);
