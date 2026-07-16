@@ -85,7 +85,11 @@ async function main() {
         config,
         { dryRun: args.dryRun, limit: args.limit },
         {
-          onStart: (total) => console.log(`${total} active product(s) to scan.\n`),
+          onDiscovery: (checked, total) => {
+            if (checked % 50 === 0 || checked === total)
+              console.log(`Checking URL mappings... ${checked}/${total}`);
+          },
+          onStart: (total) => console.log(`${total} product(s) with URLs to scan.\n`),
           onProduct: (i, total, name) => console.log(`[${i + 1}/${total}] ${name}`),
           onResult: (r) =>
             console.log(

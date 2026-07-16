@@ -53,6 +53,8 @@ ipcMain.handle("scan:start", async (_event, opts: ScanOptions) => {
       config,
       opts,
       {
+        onDiscovery: (checked, total) =>
+          send("scan:event", { type: "discovery", checked, total }),
         onStart: (total) => send("scan:event", { type: "products", total }),
         onProduct: (index, total, name) =>
           send("scan:event", { type: "product", index, total, name }),
