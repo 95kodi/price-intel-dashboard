@@ -44,12 +44,6 @@ export default function DashboardPage() {
             </span>
           )}
         </Link>
-        <button
-          aria-label="Account"
-          className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-white text-xs font-semibold flex items-center justify-center hover:opacity-90 transition-opacity"
-        >
-          RK
-        </button>
       </PageHeader>
 
       <div className="p-8 space-y-8 max-w-[1600px] mx-auto">
