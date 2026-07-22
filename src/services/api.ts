@@ -1,11 +1,11 @@
 import type { Product, PriceComparison, PriceComparisonResponse, MergedProduct, DashboardSummary, ProductWithPrices, Competitor, Notification, CompetitorCoverage } from "@/types";
+import { getProducts } from "./productService";
 
 const API_BASE = "https://api.gogizmo.co";
 
+// The catalog endpoint is paginated; getProducts() walks every page for us.
 async function fetchProductsAPI(): Promise<Product[]> {
-  const res = await fetch(`${API_BASE}/products/`);
-  if (!res.ok) throw new Error(`Failed to fetch products: ${res.statusText}`);
-  return res.json();
+  return getProducts();
 }
 
 async function fetchPriceComparisonAPI(): Promise<PriceComparisonResponse> {
@@ -14,9 +14,35 @@ async function fetchPriceComparisonAPI(): Promise<PriceComparisonResponse> {
   return res.json();
 }
 
-async function fetchAllData() {
-  const [products, comparison] = await Promise.all([fetchProductsAPI(), fetchPriceComparisonAPI()]);
-  return { products, comparison };
+type AllData = { products: Product[]; comparison: PriceComparisonResponse };
+
+// Eight exported queries below each need the same two payloads, and the
+// catalog is now ~40 paged requests — so share one in-flight fetch between
+// them instead of letting every caller re-walk the whole catalog.
+const ALL_DATA_TTL = 30_000;
+let allDataCache: { at: number; promise: Promise<AllData> } | null = null;
+
+function fetchAllData(): Promise<AllData> {
+  if (allDataCache && Date.now() - allDataCache.at < ALL_DATA_TTL) {
+    return allDataCache.promise;
+  }
+
+  const promise = (async (): Promise<AllData> => {
+    const [products, comparison] = await Promise.all([
+      fetchProductsAPI(),
+      fetchPriceComparisonAPI(),
+    ]);
+    return { products, comparison };
+  })();
+
+  const entry = { at: Date.now(), promise };
+  allDataCache = entry;
+  // Don't cache a rejection — let the next caller retry.
+  promise.catch(() => {
+    if (allDataCache === entry) allDataCache = null;
+  });
+
+  return promise;
 }
 
 function mergeData(products: Product[], comparison: PriceComparison[]): MergedProduct[] {
@@ -30,7 +56,13 @@ function mergeData(products: Product[], comparison: PriceComparison[]): MergedPr
       const p = activeMap.get(pc.ProductID)!;
       const prices = [pc.AmazonPrice, pc.FlipkartPrice, pc.PoorvikaPrice, pc.CromaPrice, pc.RelianceDigitalPrice, pc.SangeethaMobilesPrice, pc.TheChennaiMobilesPrice, pc.sathyaPrice];
       const validPrices = prices.filter((pr): pr is number => pr !== null && pr > 0);
+      // Competitor-only: our own CurrentPrice is the benchmark, not a contender.
       const lowestPrice = validPrices.length > 0 ? Math.min(...validPrices) : null;
+
+      const currentPrice = pc.CurrentPrice !== null && pc.CurrentPrice > 0 ? pc.CurrentPrice : null;
+      const priceGap = currentPrice !== null && lowestPrice !== null ? currentPrice - lowestPrice : null;
+      const status: MergedProduct["status"] =
+        priceGap === null ? "unknown" : priceGap > 0 ? "losing" : priceGap < 0 ? "winning" : "matching";
 
       let lowestPlatform: string | null = null;
       if (lowestPrice !== null) {
@@ -65,8 +97,11 @@ function mergeData(products: Product[], comparison: PriceComparison[]): MergedPr
         TheChennaiMobilesURL: pc.TheChennaiMobilesURL ?? null,
         sathyaPrice: pc.sathyaPrice ?? null,
         sathyaURL: pc.sathyaURL ?? null,
+        CurrentPrice: currentPrice,
         lowestPrice,
         lowestPlatform,
+        priceGap,
+        status,
       };
     });
 }
@@ -76,18 +111,19 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
   const merged = mergeData(products, comparison.data);
   const totalProducts = merged.length;
 
-  const gaps = merged.map((m) => {
-    const prices = [m.AmazonPrice, m.FlipkartPrice, m.PoorvikaPrice, m.CromaPrice, m.RelianceDigitalPrice, m.SangeethaMobilesPrice, m.TheChennaiMobilesPrice, m.sathyaPrice].filter((p): p is number => p !== null && p > 0);
-    if (prices.length < 2) return null;
-    return Math.max(...prices) - Math.min(...prices);
-  }).filter((g): g is number => g !== null);
+  // Gap is now measured against our own price rather than the internal spread
+  // between competitors: how far we sit from the cheapest competitor.
+  const gaps = merged
+    .map((m) => m.priceGap)
+    .filter((g): g is number => g !== null)
+    .map(Math.abs);
   const averagePriceGap = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
 
   return {
     totalProducts,
-    winningProducts: 0,
-    losingProducts: 0,
-    matchingProducts: 0,
+    winningProducts: merged.filter((m) => m.status === "winning").length,
+    losingProducts: merged.filter((m) => m.status === "losing").length,
+    matchingProducts: merged.filter((m) => m.status === "matching").length,
     averagePriceGap,
     lastScanTime: new Date().toISOString(),
   };

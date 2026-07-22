@@ -136,8 +136,16 @@ export default function ProductDetailsPage() {
               <p className="text-sm font-semibold text-gray-900 mt-0.5">{product.Brand}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500">Model Name</p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">{product.ModelName}</p>
+              <p className="text-xs font-medium text-gray-500">Current Price</p>
+              <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                {product.CurrentPrice != null
+                  ? new Intl.NumberFormat("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      maximumFractionDigits: 0,
+                    }).format(product.CurrentPrice)
+                  : "—"}
+              </p>
             </div>
           </div>
         </CardContent>
