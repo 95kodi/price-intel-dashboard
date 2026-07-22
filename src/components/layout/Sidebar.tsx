@@ -9,7 +9,6 @@ import {
   Package,
   Store,
   Settings,
-  ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -121,24 +120,6 @@ export function Sidebar() {
         >
           {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} className="shrink-0" />}
           {!collapsed && <span>Collapse</span>}
-        </button>
-
-        <button
-          title={collapsed ? "Rajesh Kumar" : undefined}
-          className={cn(
-            "flex items-center gap-2.5 rounded-xl hover:bg-gray-50 w-full text-left transition-colors",
-            collapsed ? "justify-center py-2" : "px-3 py-2"
-          )}
-        >
-          <div className="w-7 h-7 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-white text-[10px] font-semibold flex items-center justify-center">
-            RK
-          </div>
-          {!collapsed && (
-            <>
-              <span className="text-xs text-ink flex-1 truncate font-medium">Rajesh Kumar</span>
-              <ChevronDown size={12} className="text-gray-400" />
-            </>
-          )}
         </button>
       </div>
     </aside>
