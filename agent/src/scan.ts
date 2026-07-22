@@ -84,6 +84,32 @@ async function getJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** One row of /price-comparison/ — a product plus its per-platform URLs. */
+interface ComparisonRow {
+  ProductID: number;
+  ItemName: string;
+  [field: string]: unknown;
+}
+
+/**
+ * ProductIDs that already have at least one competitor URL mapped, according
+ * to the backend's price-comparison view. This replaces probing every product
+ * in the catalog: the catalog holds thousands of rows but only a handful have
+ * URLs, and price-comparison already knows which ones.
+ */
+async function getMappedProductIds(apiBase: string): Promise<number[]> {
+  const res = await getJson<{ data?: ComparisonRow[] | null }>(
+    `${apiBase}/price-comparison/`
+  );
+  return (res.data ?? [])
+    .filter((row) =>
+      Object.entries(row).some(
+        ([key, value]) => key.endsWith("URL") && typeof value === "string" && value
+      )
+    )
+    .map((row) => row.ProductID);
+}
+
 async function savePrice(
   apiBase: string,
   productPlatformId: number,
@@ -142,25 +168,28 @@ export async function runScan(
 
   const totals: ScanTotals = { scanned: 0, succeeded: 0, failed: 0, failures: [] };
 
-  const products = (await getJson<Product[]>(`${config.apiBase}/products/`)).filter(
-    (p) => p.IsActive
-  );
+  // Discovery: price-comparison tells us up front which products have URLs
+  // mapped, so we only look up those instead of probing the whole catalog.
+  const mappedIds = await getMappedProductIds(config.apiBase);
 
-  // Discovery: find which products actually have platform URLs mapped, so
-  // the scan only iterates those. Concurrent — the catalog can be large.
   let checked = 0;
-  const discovered = await mapConcurrent(products, 8, async (product) => {
+  const discovered = await mapConcurrent(mappedIds, 8, async (productId) => {
     if (isCancelled()) return null;
     try {
-      const res = await getJson<{ Platforms?: PlatformUrlItem[] | null }>(
-        `${config.apiBase}/product-platform-url/product/${product.ProductID}`
-      );
-      const platforms = (res.Platforms ?? []).filter((p) => p.ProductURL);
+      const [urls, product] = await Promise.all([
+        getJson<{ ItemName?: string; Platforms?: PlatformUrlItem[] | null }>(
+          `${config.apiBase}/product-platform-url/product/${productId}`
+        ),
+        getJson<Product>(`${config.apiBase}/products/${productId}`),
+      ]);
+      if (!product.IsActive) return null;
+
+      const platforms = (urls.Platforms ?? []).filter((p) => p.ProductURL);
       return platforms.length > 0 ? { product, platforms } : null;
     } catch (err) {
       totals.failed++;
       const failure = {
-        product: product.ItemName,
+        product: `Product ${productId}`,
         platform: "—",
         error: (err as Error).message,
       };
@@ -168,7 +197,7 @@ export async function runScan(
       cb.onResult?.({ ...failure, ok: false });
       return null;
     } finally {
-      cb.onDiscovery?.(++checked, products.length);
+      cb.onDiscovery?.(++checked, mappedIds.length);
     }
   });
 

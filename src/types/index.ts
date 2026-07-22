@@ -8,6 +8,8 @@ export interface Product {
 
 export interface PriceComparison {
   ProductID: number;
+  /** Our own listed price — the benchmark competitors are measured against. */
+  CurrentPrice: number | null;
   AmazonPrice: number | null;
   AmazonURL: string | null;
   FlipkartPrice: number | null;
@@ -53,8 +55,17 @@ export interface MergedProduct {
   TheChennaiMobilesURL: string | null;
   sathyaPrice: number | null;
   sathyaURL: string | null;
+  /** Our own listed price. Not part of lowestPrice/lowestPlatform. */
+  CurrentPrice: number | null;
+  /** Cheapest competitor price — excludes CurrentPrice. */
   lowestPrice: number | null;
   lowestPlatform: string | null;
+  /**
+   * CurrentPrice − lowestPrice. Positive = we are pricier than the cheapest
+   * competitor (losing), negative = we undercut them (winning), null = not
+   * comparable. */
+  priceGap: number | null;
+  status: "winning" | "losing" | "matching" | "unknown";
 }
 
 export interface CompetitorCoverage {

@@ -117,7 +117,7 @@ function pageList(current: number, count: number): (number | "…")[] {
 }
 
 export function exportCsv(rows: MergedProduct[]) {
-  const headers = ["Product", "Brand", "Category", ...COMPETITOR_COLS.map((c) => c.label), "Lowest Price", "Lowest Platform"];
+  const headers = ["Product", "Brand", "Category", "Our Price", ...COMPETITOR_COLS.map((c) => c.label), "Lowest Price", "Lowest Platform", "Gap vs Best", "Status"];
   const esc = (v: string | number | null) => {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -129,9 +129,12 @@ export function exportCsv(rows: MergedProduct[]) {
         esc(r.ItemName),
         esc(r.Brand),
         esc(r.Category),
+        esc(r.CurrentPrice),
         ...COMPETITOR_COLS.map((c) => esc(r[c.key])),
         esc(r.lowestPrice),
         esc(r.lowestPlatform),
+        esc(r.priceGap),
+        esc(r.status),
       ].join(",")
     ),
   ];
@@ -190,6 +193,21 @@ export function PriceComparisonTable() {
       },
     ];
 
+    cols.push({
+      accessorKey: "CurrentPrice",
+      header: "Our Price",
+      enableSorting: true,
+      cell: (info) => {
+        const price = info.getValue() as number | null;
+        if (price === null) return <span className="text-gray-300">—</span>;
+        return (
+          <span className="tnum text-[13px] font-semibold text-indigo-700 bg-indigo-50 ring-1 ring-inset ring-indigo-100 px-2 py-1 rounded-lg">
+            {formatPrice(price)}
+          </span>
+        );
+      },
+    });
+
     for (const { key, urlKey, label } of COMPETITOR_COLS) {
       cols.push({
         accessorKey: key,
@@ -231,17 +249,24 @@ export function PriceComparisonTable() {
     });
 
     cols.push({
-      id: "spread",
-      header: "Spread",
+      id: "priceGap",
+      header: "vs Best",
       enableSorting: true,
-      accessorFn: (row) => {
-        const prices = COMPETITOR_COLS.map((c) => row[c.key]).filter((p): p is number => p !== null && p > 0);
-        return prices.length >= 2 ? Math.max(...prices) - Math.min(...prices) : 0;
-      },
+      accessorFn: (row) => row.priceGap ?? 0,
       cell: (info) => {
-        const gap = info.getValue() as number;
-        if (!gap) return <span className="text-gray-300">—</span>;
-        return <span className="tnum text-xs font-medium text-amber-700">+{formatPrice(gap)}</span>;
+        const row = info.row.original;
+        if (row.priceGap === null) return <span className="text-gray-300">—</span>;
+        if (row.priceGap === 0) {
+          return <span className="tnum text-xs font-medium text-ink-muted">Matching</span>;
+        }
+        // Positive = we are pricier than the cheapest competitor.
+        const losing = row.priceGap > 0;
+        return (
+          <span className={`tnum text-xs font-semibold ${losing ? "text-red-600" : "text-emerald-700"}`}>
+            {losing ? "+" : "−"}
+            {formatPrice(Math.abs(row.priceGap)).replace("₹", "₹")}
+          </span>
+        );
       },
     });
 

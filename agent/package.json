@@ -1,6 +1,6 @@
 {
   "name": "price-intel-agent",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Desktop scraper agent for the Price Intel dashboard. Runs price scans from a residential IP and pushes results to the backend API.",
   "author": "95kodi",

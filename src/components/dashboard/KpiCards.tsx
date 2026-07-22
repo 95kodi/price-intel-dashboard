@@ -129,7 +129,8 @@ export function KpiCards() {
       const prices = COMPETITOR_PRICE_KEYS.map((k) => p[k]).filter((v): v is number => v !== null && v > 0);
       if (prices.length < COMPETITOR_PRICE_KEYS.length) missingProducts += 1;
       if (prices.length > 0) pricedProducts += 1;
-      if (prices.length >= 2) gaps.push(Math.max(...prices) - Math.min(...prices));
+      // Gap is our price vs the cheapest competitor, not the competitor spread.
+      if (p.priceGap !== null) gaps.push(Math.abs(p.priceGap));
     }
     const topWinner = Object.entries(winnerCounts).sort((a, b) => b[1] - a[1])[0];
     const avgGap = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
@@ -178,7 +179,7 @@ export function KpiCards() {
       {
         label: "Avg. Price Difference",
         value: formatPrice(avgGap),
-        sub: "Mean gap between highest & lowest",
+        sub: `Mean gap vs cheapest — ${summary.winningProducts} winning · ${summary.losingProducts} losing`,
         icon: ArrowLeftRight,
         iconStyle: "bg-sky-50 text-sky-600",
         seed: avgGap,

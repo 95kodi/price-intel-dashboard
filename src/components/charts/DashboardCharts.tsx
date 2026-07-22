@@ -234,18 +234,30 @@ export function AveragePriceByCompetitorChart() {
   const { products, isLoading, isError, refetch } = useChartData();
   const data = useMemo(() => {
     if (!products) return [];
-    return COMPETITOR_COLS.map(({ key, label, color }) => {
-      const prices = products.map((p) => p[key]).filter((p): p is number => p !== null && p > 0);
-      const avg = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
-      return { name: label, avg, color };
-    }).filter((d) => d.avg > 0);
+    const mean = (values: number[]) =>
+      values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+
+    const competitors = COMPETITOR_COLS.map(({ key, label, color }) => ({
+      name: label,
+      avg: mean(products.map((p) => p[key]).filter((p): p is number => p !== null && p > 0)),
+      color,
+    }));
+
+    // Lead with our own average so competitors read against it.
+    const ours = {
+      name: "Us",
+      avg: mean(products.map((p) => p.CurrentPrice).filter((p): p is number => p !== null && p > 0)),
+      color: "#4f46e5",
+    };
+
+    return [ours, ...competitors].filter((d) => d.avg > 0);
   }, [products]);
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartCard title="Average Pricing" subtitle="Mean listed price per competitor" data={data}>
+    <ChartCard title="Average Pricing" subtitle="Our mean price vs. each competitor" data={data}>
       {(height) =>
         data.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
@@ -389,25 +401,24 @@ export function PriceGapAnalysisChart() {
   const { products, isLoading, isError, refetch } = useChartData();
   const data = useMemo(() => {
     if (!products) return [];
-    return products.slice(0, 20).map((p) => {
-      const prices = COMPETITOR_COLS.map((c) => p[c.key]).filter((pr): pr is number => pr !== null && pr > 0);
-      const highest = prices.length > 0 ? Math.max(...prices) : 0;
-      const lowest = prices.length > 0 ? Math.min(...prices) : 0;
-      const gap = highest - lowest;
-      return {
+    // Our price against the cheapest competitor, so the gap line reads as
+    // "how far above/below the market we are" rather than competitor spread.
+    return products
+      .slice(0, 20)
+      .map((p) => ({
         name: p.ItemName.length > 15 ? p.ItemName.slice(0, 15) + "..." : p.ItemName,
-        highest,
-        lowest,
-        gap,
-      };
-    }).filter((d) => d.highest > 0);
+        ourPrice: p.CurrentPrice ?? 0,
+        bestCompetitor: p.lowestPrice ?? 0,
+        gap: p.priceGap ?? 0,
+      }))
+      .filter((d) => d.ourPrice > 0 || d.bestCompetitor > 0);
   }, [products]);
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartCard title="Price Gap Analysis" subtitle="Highest vs. lowest price per product" data={data}>
+    <ChartCard title="Price Gap Analysis" subtitle="Our price vs. cheapest competitor" data={data}>
       {(height) =>
         data.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
@@ -419,9 +430,9 @@ export function PriceGapAnalysisChart() {
               <YAxis tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
               <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
               <Legend iconSize={8} iconType="circle" />
-              <Bar dataKey="highest" fill="#ef4444" radius={[6, 6, 0, 0]} maxBarSize={18} name="Highest Price" animationDuration={600} />
-              <Bar dataKey="lowest" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={18} name="Lowest Price" animationDuration={600} />
-              <Line dataKey="gap" stroke="#4f46e5" strokeWidth={2} name="Gap" dot={false} animationDuration={600} />
+              <Bar dataKey="ourPrice" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={18} name="Our Price" animationDuration={600} />
+              <Bar dataKey="bestCompetitor" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={18} name="Best Competitor" animationDuration={600} />
+              <Line dataKey="gap" stroke="#ef4444" strokeWidth={2} name="Gap vs Best" dot={false} animationDuration={600} />
             </ComposedChart>
           </ResponsiveContainer>
         )
