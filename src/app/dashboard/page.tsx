@@ -6,14 +6,10 @@ import { KpiCards } from "@/components/dashboard/KpiCards";
 import { PriceComparisonTable, exportCsv } from "@/components/dashboard/PriceComparisonTable";
 import { DownloadAgentButton } from "@/components/dashboard/DownloadAgentButton";
 import {
-  CoverageBarChart,
-  LowestPriceWinnerChart,
-  BrandDistributionChart,
-  AveragePriceByCompetitorChart,
-  MissingPriceCoverageChart,
-  CheapestPlatformTrendChart,
-  ProductPriceSpreadChart,
-  PriceGapAnalysisChart,
+  PricePositionChart,
+  CompetitorBenchmarkChart,
+  BiggestPriceGapsChart,
+  PriceVsMarketChart,
 } from "@/components/charts/DashboardCharts";
 import { useDashboardSummary, useProductsWithPrices, useNotifications } from "@/hooks/useQueries";
 import { formatDateTime } from "@/lib/utils";
@@ -68,17 +64,13 @@ export default function DashboardPage() {
         <section aria-label="Competitor insights">
           <div className="mb-6">
             <h2 className="text-2xl font-semibold text-ink tracking-tight">Competitor Insights</h2>
-            <p className="text-sm text-ink-muted mt-1">Coverage, pricing, and gap analysis across marketplaces</p>
+            <p className="text-sm text-ink-muted mt-1">Where we stand against the market, and what to act on</p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CoverageBarChart />
-            <LowestPriceWinnerChart />
-            <BrandDistributionChart />
-            <AveragePriceByCompetitorChart />
-            <MissingPriceCoverageChart />
-            <CheapestPlatformTrendChart />
-            <ProductPriceSpreadChart />
-            <PriceGapAnalysisChart />
+            <PricePositionChart />
+            <CompetitorBenchmarkChart />
+            <BiggestPriceGapsChart />
+            <PriceVsMarketChart />
           </div>
         </section>
       </div>
