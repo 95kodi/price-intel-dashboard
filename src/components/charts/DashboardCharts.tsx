@@ -2,23 +2,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, ScatterChart, Scatter, ComposedChart, Line,
+  CartesianGrid, Tooltip, Legend, LabelList,
 } from "recharts";
 import { Download, Maximize2, X } from "lucide-react";
 import { useProductsWithPrices, useCompetitorCoverage } from "@/hooks/useQueries";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/States";
-
-const COMPETITOR_COLS = [
-  { key: "AmazonPrice" as const, label: "Amazon", color: "#f59e0b" },
-  { key: "FlipkartPrice" as const, label: "Flipkart", color: "#6366f1" },
-  { key: "PoorvikaPrice" as const, label: "Poorvika", color: "#10b981" },
-  { key: "CromaPrice" as const, label: "Croma", color: "#8b5cf6" },
-  { key: "RelianceDigitalPrice" as const, label: "Reliance", color: "#f43f5e" },
-  { key: "SangeethaMobilesPrice" as const, label: "Sangeetha", color: "#f97316" },
-  { key: "TheChennaiMobilesPrice" as const, label: "Chennai Mobiles", color: "#14b8a6" },
-  { key: "sathyaPrice" as const, label: "Sathya", color: "#ec4899" },
-];
 
 const AXIS_TICK = { fontSize: 11, fill: "#6b7280" };
 const GRID_STROKE = "#f1f5f9";
@@ -122,232 +111,157 @@ function useChartData() {
   return { products, coverage, isLoading: isLoading || covLoading, isError, refetch };
 }
 
-export function CoverageBarChart() {
-  const { coverage, isLoading, isError, refetch } = useChartData();
+// Two-series categorical pair, validated (normal ΔE 37.1, worst CVD 21.0).
+const SERIES_OURS = "#4f46e5";
+const SERIES_MARKET = "#10b981";
+
+const rupees = (v: number) => `₹${v.toLocaleString("en-IN")}`;
+const rupeesShort = (v: number) => `₹${Math.round(v / 1000)}k`;
+const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+function NoData() {
+  return <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>;
+}
+
+/**
+ * Where each competitor stands: how much of our catalog they list, and how
+ * often they undercut everyone. Both series count products, so they share one
+ * axis — this replaces the separate coverage / missing / winner charts.
+ */
+export function CompetitorBenchmarkChart() {
+  const { products, coverage, isLoading, isError, refetch } = useChartData();
+  const data = useMemo(() => {
+    if (!coverage) return [];
+    const wins: Record<string, number> = {};
+    for (const p of products ?? []) {
+      if (p.lowestPlatform) wins[p.lowestPlatform] = (wins[p.lowestPlatform] || 0) + 1;
+    }
+    return coverage
+      .map((c) => ({ name: c.competitor, Listed: c.count, Cheapest: wins[c.competitor] ?? 0 }))
+      .sort((a, b) => b.Listed - a.Listed || b.Cheapest - a.Cheapest);
+  }, [products, coverage]);
+
   if (isLoading) return <ChartSkeleton />;
   if (isError || !coverage) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartCard title="Product Coverage" subtitle="Listing coverage by competitor" data={coverage}>
-      {(height) => (
-        <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={coverage} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID_STROKE} />
-            <XAxis type="number" tick={AXIS_TICK} domain={[0, 100]} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
-            <YAxis dataKey="competitor" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} axisLine={false} tickLine={false} />
-            <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} formatter={(v) => [`${v}%`, "Coverage"]} />
-            <Bar dataKey="percentage" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600}>
-              {coverage.map((entry, i) => (
-                <Cell key={i} fill={COMPETITOR_COLS.find((c) => c.label === entry.competitor)?.color || "#4f46e5"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-    </ChartCard>
-  );
-}
-
-export function LowestPriceWinnerChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    const counts: Record<string, number> = {};
-    for (const p of products) {
-      if (p.lowestPlatform) {
-        counts[p.lowestPlatform] = (counts[p.lowestPlatform] || 0) + 1;
-      }
-    }
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value, color: COMPETITOR_COLS.find((c) => c.label === name)?.color || "#6b7280" }))
-      .sort((a, b) => b.value - a.value);
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Lowest Price Winner" subtitle="Who is cheapest most often" data={data}>
+    <ChartCard title="Competitor Benchmark" subtitle="Products listed vs. times cheapest" data={data}>
       {(height) =>
         data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+          <NoData />
         ) : (
-          <ResponsiveContainer width="100%" height={height}>
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={3} cornerRadius={4} animationDuration={600}>
-                {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend iconSize={8} iconType="circle" />
-            </PieChart>
-          </ResponsiveContainer>
-        )
-      }
-    </ChartCard>
-  );
-}
-
-const BRAND_COLORS = ["#4f46e5", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#6366f1", "#f97316", "#6b7280"];
-
-export function BrandDistributionChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    const counts: Record<string, number> = {};
-    for (const p of products) {
-      counts[p.Brand] = (counts[p.Brand] || 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([name, value], i) => ({ name, value, color: BRAND_COLORS[i % BRAND_COLORS.length] }))
-      .sort((a, b) => b.value - a.value);
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Brand Distribution" subtitle="Catalog mix by brand" data={data}>
-      {(height) =>
-        data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={height}>
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" innerRadius="45%" outerRadius="85%" paddingAngle={3} cornerRadius={4} animationDuration={600}>
-                {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend iconSize={8} iconType="circle" />
-            </PieChart>
-          </ResponsiveContainer>
-        )
-      }
-    </ChartCard>
-  );
-}
-
-export function AveragePriceByCompetitorChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    const mean = (values: number[]) =>
-      values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-
-    const competitors = COMPETITOR_COLS.map(({ key, label, color }) => ({
-      name: label,
-      avg: mean(products.map((p) => p[key]).filter((p): p is number => p !== null && p > 0)),
-      color,
-    }));
-
-    // Lead with our own average so competitors read against it.
-    const ours = {
-      name: "Us",
-      avg: mean(products.map((p) => p.CurrentPrice).filter((p): p is number => p !== null && p > 0)),
-      color: "#4f46e5",
-    };
-
-    return [ours, ...competitors].filter((d) => d.avg > 0);
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Average Pricing" subtitle="Our mean price vs. each competitor" data={data}>
-      {(height) =>
-        data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={height}>
-            <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
-              <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-              <YAxis tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
-              <Bar dataKey="avg" radius={[6, 6, 0, 0]} maxBarSize={36} animationDuration={600} name="Avg. price">
-                {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )
-      }
-    </ChartCard>
-  );
-}
-
-export function MissingPriceCoverageChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    const total = products.length;
-    return COMPETITOR_COLS.map(({ key, label }) => {
-      const available = products.filter((p) => p[key] !== null && p[key] > 0).length;
-      return { name: label, Available: available, Missing: total - available };
-    });
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Missing Products" subtitle="Available vs. missing listings per competitor" data={data}>
-      {(height) => (
-        <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
-            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
-            <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
-            <Legend iconSize={8} iconType="circle" />
-            <Bar dataKey="Available" stackId="a" fill="#10b981" animationDuration={600} />
-            <Bar dataKey="Missing" stackId="a" fill="#e5e7eb" radius={[6, 6, 0, 0]} animationDuration={600} />
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-    </ChartCard>
-  );
-}
-
-export function CheapestPlatformTrendChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    const counts: Record<string, number> = {};
-    for (const p of products) {
-      if (p.lowestPlatform) {
-        counts[p.lowestPlatform] = (counts[p.lowestPlatform] || 0) + 1;
-      }
-    }
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value, color: COMPETITOR_COLS.find((c) => c.label === name)?.color || "#6b7280" }))
-      .sort((a, b) => b.value - a.value);
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Competitor Performance" subtitle="Products won per competitor" data={data}>
-      {(height) =>
-        data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={height}>
-            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={height + 40}>
+            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 0 }} barGap={2}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID_STROKE} />
-              <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-              <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 12, fill: "#374151" }} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} formatter={(v) => [v, "Products won"]} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600}>
+              <XAxis type="number" tick={AXIS_TICK} allowDecimals={false} axisLine={false} tickLine={false} />
+              <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 12, fill: "#374151" }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+              <Legend iconSize={8} iconType="circle" />
+              <Bar dataKey="Listed" fill={SERIES_OURS} radius={[0, 4, 4, 0]} maxBarSize={12} animationDuration={600} />
+              <Bar dataKey="Cheapest" fill={SERIES_MARKET} radius={[0, 4, 4, 0]} maxBarSize={12} animationDuration={600} />
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
+  );
+}
+
+// Status palette. Slice order matters: green and red must not touch (deutan
+// ΔE 5.8), so the neutral "matching" slice always sits between them.
+const POSITION_SLICES = [
+  { key: "winning" as const, label: "Cheaper than market", color: "#059669" },
+  { key: "matching" as const, label: "Matching cheapest", color: "#94a3b8" },
+  { key: "losing" as const, label: "Above market", color: "#e11d48" },
+  { key: "unknown" as const, label: "Not listed anywhere", color: "#e2e8f0" },
+];
+
+/** The headline question: on how many products are we actually competitive? */
+export function PricePositionChart() {
+  const { products, isLoading, isError, refetch } = useChartData();
+  const data = useMemo(() => {
+    if (!products) return [];
+    return POSITION_SLICES.map(({ key, label, color }) => ({
+      name: label,
+      value: products.filter((p) => p.status === key).length,
+      color,
+    })).filter((d) => d.value > 0);
+  }, [products]);
+
+  if (isLoading) return <ChartSkeleton />;
+  if (isError) return <ErrorState onRetry={() => refetch()} />;
+
+  return (
+    <ChartCard title="Price Position" subtitle="How our price compares to the cheapest competitor" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <NoData />
+        ) : (
+          <ResponsiveContainer width="100%" height={height + 40}>
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                innerRadius="55%"
+                outerRadius="80%"
+                paddingAngle={3}
+                cornerRadius={4}
+                animationDuration={600}
+                label={({ name, value }) => `${name}: ${value}`}
+                labelLine={{ stroke: "#cbd5e1" }}
+                style={{ fontSize: 11, fill: "#6b7280" }}
+              >
                 {data.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
+                  <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
                 ))}
+              </Pie>
+              <Tooltip formatter={(v) => [v, "Products"]} />
+              <Legend iconSize={8} iconType="circle" />
+            </PieChart>
+          </ResponsiveContainer>
+        )
+      }
+    </ChartCard>
+  );
+}
+
+/** The action list: which products are costing us the most versus the market. */
+export function BiggestPriceGapsChart() {
+  const { products, isLoading, isError, refetch } = useChartData();
+  const data = useMemo(() => {
+    if (!products) return [];
+    return products
+      .filter((p) => (p.priceGap ?? 0) > 0)
+      .sort((a, b) => (b.priceGap ?? 0) - (a.priceGap ?? 0))
+      .slice(0, 8)
+      .map((p) => ({
+        name: truncate(p.ItemName, 26),
+        gap: p.priceGap ?? 0,
+        cheapestAt: p.lowestPlatform ?? "—",
+      }));
+  }, [products]);
+
+  if (isLoading) return <ChartSkeleton />;
+  if (isError) return <ErrorState onRetry={() => refetch()} />;
+
+  return (
+    <ChartCard title="Biggest Price Gaps" subtitle="Products where we are furthest above the cheapest competitor" data={data}>
+      {(height) =>
+        data.length === 0 ? (
+          <NoData />
+        ) : (
+          <ResponsiveContainer width="100%" height={height + 40}>
+            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 60, left: 10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={GRID_STROKE} />
+              <XAxis type="number" tick={AXIS_TICK} tickFormatter={rupeesShort} axisLine={false} tickLine={false} />
+              <YAxis dataKey="name" type="category" width={170} tick={{ fontSize: 11, fill: "#374151" }} axisLine={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: "rgba(225,29,72,0.04)" }}
+                formatter={(v, _n, item) => [`${rupees(Number(v))} above ${item.payload.cheapestAt}`, "Gap"]}
+              />
+              <Bar dataKey="gap" fill="#e11d48" radius={[0, 4, 4, 0]} maxBarSize={14} animationDuration={600} name="Gap vs cheapest">
+                <LabelList dataKey="gap" position="right" formatter={(v) => rupees(Number(v))} style={{ fontSize: 10, fill: "#6b7280" }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -357,83 +271,40 @@ export function CheapestPlatformTrendChart() {
   );
 }
 
-export function ProductPriceSpreadChart() {
+/** Per-product detail behind the position split: our price against the market. */
+export function PriceVsMarketChart() {
   const { products, isLoading, isError, refetch } = useChartData();
   const data = useMemo(() => {
     if (!products) return [];
-    const result: Array<{ product: string; price: number; competitor: string }> = [];
-    for (const p of products.slice(0, 30)) {
-      for (const { key, label } of COMPETITOR_COLS) {
-        const price = p[key];
-        if (price !== null && price > 0) {
-          result.push({ product: p.ItemName.length > 20 ? p.ItemName.slice(0, 20) + "..." : p.ItemName, price, competitor: label });
-        }
-      }
-    }
-    return result;
-  }, [products]);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
-
-  return (
-    <ChartCard title="Price Distribution" subtitle="Individual prices per product across competitors" data={data}>
-      {(height) =>
-        data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={height + 40}>
-            <ScatterChart margin={{ top: 10, right: 20, left: 20, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
-              <XAxis dataKey="product" tick={{ fontSize: 9, fill: "#6b7280" }} angle={-45} textAnchor="end" height={80} interval={0} />
-              <YAxis dataKey="price" tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Scatter data={data} fill="#4f46e5" opacity={0.55} animationDuration={600} />
-            </ScatterChart>
-          </ResponsiveContainer>
-        )
-      }
-    </ChartCard>
-  );
-}
-
-export function PriceGapAnalysisChart() {
-  const { products, isLoading, isError, refetch } = useChartData();
-  const data = useMemo(() => {
-    if (!products) return [];
-    // Our price against the cheapest competitor, so the gap line reads as
-    // "how far above/below the market we are" rather than competitor spread.
     return products
-      .slice(0, 20)
+      .filter((p) => p.CurrentPrice !== null && p.lowestPrice !== null)
+      .slice(0, 12)
       .map((p) => ({
-        name: p.ItemName.length > 15 ? p.ItemName.slice(0, 15) + "..." : p.ItemName,
-        ourPrice: p.CurrentPrice ?? 0,
-        bestCompetitor: p.lowestPrice ?? 0,
-        gap: p.priceGap ?? 0,
-      }))
-      .filter((d) => d.ourPrice > 0 || d.bestCompetitor > 0);
+        name: truncate(p.ItemName, 18),
+        "Our price": p.CurrentPrice ?? 0,
+        "Cheapest competitor": p.lowestPrice ?? 0,
+      }));
   }, [products]);
 
   if (isLoading) return <ChartSkeleton />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
 
   return (
-    <ChartCard title="Price Gap Analysis" subtitle="Our price vs. cheapest competitor" data={data}>
+    <ChartCard title="Our Price vs. the Market" subtitle="Side by side with the cheapest competitor" data={data}>
       {(height) =>
         data.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-sm text-ink-muted">No data</div>
+          <NoData />
         ) : (
           <ResponsiveContainer width="100%" height={height + 40}>
-            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 60 }}>
+            <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 60 }} barGap={2}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID_STROKE} />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#6b7280" }} angle={-45} textAnchor="end" height={80} interval={0} />
-              <YAxis tick={AXIS_TICK} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+              <YAxis tick={AXIS_TICK} tickFormatter={rupeesShort} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(79,70,229,0.04)" }} formatter={(v) => rupees(Number(v))} />
               <Legend iconSize={8} iconType="circle" />
-              <Bar dataKey="ourPrice" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={18} name="Our Price" animationDuration={600} />
-              <Bar dataKey="bestCompetitor" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={18} name="Best Competitor" animationDuration={600} />
-              <Line dataKey="gap" stroke="#ef4444" strokeWidth={2} name="Gap vs Best" dot={false} animationDuration={600} />
-            </ComposedChart>
+              <Bar dataKey="Our price" fill={SERIES_OURS} radius={[4, 4, 0, 0]} maxBarSize={16} animationDuration={600} />
+              <Bar dataKey="Cheapest competitor" fill={SERIES_MARKET} radius={[4, 4, 0, 0]} maxBarSize={16} animationDuration={600} />
+            </BarChart>
           </ResponsiveContainer>
         )
       }
