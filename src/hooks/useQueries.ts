@@ -1,6 +1,9 @@
 "use client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/services/api";
+import { getProductById } from "@/services/productService";
+import { getProductPlatformUrls } from "@/services/productPlatformUrlService";
+import { getCompetitors } from "@/services/competitorService";
 
 export const QUERY_KEYS = {
   dashboard: ["dashboard"] as const,
@@ -13,6 +16,9 @@ export const QUERY_KEYS = {
   competitorCoverage: ["competitor-coverage"] as const,
   priceHistory: (productId: number) => ["price-history", productId] as const,
   productPlatforms: ["product-platforms"] as const,
+  product: (productId: number) => ["product", productId] as const,
+  productUrls: (productId: number) => ["product-urls", productId] as const,
+  platformMaster: ["platform-master"] as const,
 };
 
 export function useDashboardSummary() {
@@ -65,6 +71,36 @@ export function useUpdateProduct() {
 export function useDeleteProduct() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: api.deleteProduct, onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }) });
+}
+
+/** One catalog row — name, brand, SKU, our price, and when it last changed. */
+export function useProduct(productId: number) {
+  return useQuery({
+    queryKey: QUERY_KEYS.product(productId),
+    queryFn: () => getProductById(productId),
+    enabled: Number.isFinite(productId),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** The marketplace URLs mapped to a product — what makes a listing editable. */
+export function useProductUrls(productId: number) {
+  return useQuery({
+    queryKey: QUERY_KEYS.productUrls(productId),
+    queryFn: () => getProductPlatformUrls(productId),
+    enabled: Number.isFinite(productId),
+    staleTime: 30_000,
+  });
+}
+
+/** The platform master. Rarely changes, so it is cached hard. */
+export function usePlatformMaster() {
+  return useQuery({
+    queryKey: QUERY_KEYS.platformMaster,
+    queryFn: getCompetitors,
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function useCompetitors() {

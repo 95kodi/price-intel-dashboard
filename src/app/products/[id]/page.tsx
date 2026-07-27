@@ -1,302 +1,236 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Pencil, Plus } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { formatPrice } from "@/lib/utils";
-import { getProductPlatformUrls, type ProductPlatformUrlResponse } from "@/services/productPlatformUrlService";
-import { getPlatformPriceHistory, type PlatformPriceEntry } from "@/services/platformPriceHistoryService";
-import { getProductById, type CatalogProduct } from "@/services/productService";
+import { ArrowLeft } from "lucide-react";
+import { KpiCardSkeleton, Skeleton } from "@/components/ui/Skeleton";
+import { ErrorState } from "@/components/ui/States";
+import { ProductHero } from "@/components/products/detail/ProductHero";
+import {
+  ProductKpis,
+  MarketplaceTable,
+  MarketplaceCards,
+} from "@/components/products/detail/MarketplaceBreakdown";
+import {
+  MarketInsights,
+  Recommendations,
+  CoverageGaps,
+  PriceHistorySection,
+} from "@/components/products/detail/ProductIntelligence";
 import { EditProductUrlDialog } from "@/components/products/EditProductUrlDialog";
 import { AddProductUrlDialog } from "@/components/products/AddProductUrlDialog";
+import { EditProductDialog } from "@/components/products/EditProductDialog";
+import { DeleteProductDialog } from "@/components/products/DeleteProductDialog";
+import {
+  useProductsWithPrices,
+  useProduct,
+  useProductUrls,
+  usePlatformMaster,
+} from "@/hooks/useQueries";
+import { buildInsights, type MarketRow } from "@/lib/product-detail";
 
-interface PlatformSummary {
+interface MappedUrl {
   productPlatformId: number;
   platformId: number;
   name: string;
   url: string;
-  price: number | null;
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="p-5 sm:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <Skeleton className="h-28 rounded-2xl" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <KpiCardSkeleton key={i} />
+        ))}
+      </div>
+      <Skeleton className="h-64 rounded-2xl" />
+    </div>
+  );
 }
 
 export default function ProductDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const productId = Number(params.id);
-  const [product, setProduct] = useState<CatalogProduct | null>(null);
-  const [urlsData, setUrlsData] = useState<ProductPlatformUrlResponse | null>(null);
-  const [priceEntries, setPriceEntries] = useState<PlatformPriceEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [editTarget, setEditTarget] = useState<PlatformSummary | null>(null);
-  const [showAddDialog, setShowAddDialog] = useState(false);
 
-  const fetchData = async () => {
-    if (!productId) return;
-    setIsLoading(true);
-    setIsError(false);
-    try {
-      const [productResult, urlResult, priceResult] = await Promise.all([
-        getProductById(productId),
-        getProductPlatformUrls(productId),
-        getPlatformPriceHistory(productId),
-      ]);
-      setProduct(productResult);
-      setUrlsData(urlResult);
-      setPriceEntries(priceResult ?? []);
-    } catch {
-      setIsError(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [refreshing, setRefreshing] = useState(false);
+  const [editUrlTarget, setEditUrlTarget] = useState<MarketRow | null>(null);
+  const [showAddUrl, setShowAddUrl] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, [productId]);
-
-  const platforms: PlatformSummary[] = urlsData
-    ? (urlsData.Platforms ?? []).map((p) => {
-        const priceEntry = priceEntries.find(
-          (e) => e.ProductPlatformID === p.ProductPlatformID
-        );
-        return {
-          productPlatformId: p.ProductPlatformID,
-          platformId: p.PlatformID,
-          name: p.PlatformName,
-          url: p.ProductURL,
-          price: priceEntry?.Price ?? null,
-        };
-      })
-    : [];
-
-  const sorted = [...platforms].sort(
-    (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity)
+  // The merged comparison feed is the same source the dashboard and the
+  // winners page read, so every price on this page agrees with those.
+  const {
+    data: merged,
+    isLoading: pricesLoading,
+    isError: pricesError,
+    refetch: refetchMerged,
+  } = useProductsWithPrices();
+  const mergedProduct = useMemo(
+    () => merged?.find((p) => p.ProductID === productId) ?? null,
+    [merged, productId]
   );
 
-  const lowestPrice = sorted.length > 0 ? sorted[0].price : null;
+  const productQuery = useProduct(productId);
+  const urlsQuery = useProductUrls(productId);
+  // The platform master fails independently: losing it costs us platform ids,
+  // not the whole page.
+  const platformsQuery = usePlatformMaster();
 
-  if (isLoading) {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="animate-pulse bg-gray-200 rounded-xl h-24" />
-        <div className="animate-pulse bg-gray-200 rounded-xl h-48" />
-        <div className="animate-pulse bg-gray-200 rounded-xl h-32" />
-      </div>
-    );
-  }
+  const product = productQuery.data ?? null;
 
-  if (isError || !product) {
+  const mapped: MappedUrl[] = useMemo(
+    () =>
+      (urlsQuery.data?.Platforms ?? []).map((p) => ({
+        productPlatformId: p.ProductPlatformID,
+        platformId: p.PlatformID,
+        name: p.PlatformName,
+        url: p.ProductURL,
+      })),
+    [urlsQuery.data]
+  );
+
+  const refresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      productQuery.refetch(),
+      urlsQuery.refetch(),
+      platformsQuery.refetch(),
+      refetchMerged(),
+    ]);
+    setRefreshing(false);
+  };
+
+  const insights = useMemo(
+    () =>
+      buildInsights(
+        mergedProduct,
+        (platformsQuery.data ?? []).map((p) => ({
+          platformId: p.PlatformID,
+          name: p.PlatformName,
+        })),
+        mapped
+      ),
+    [mergedProduct, platformsQuery.data, mapped]
+  );
+
+  // Every source must land before the derived sections render: half-loaded,
+  // they would state "no competitor prices" about a product that has them.
+  if (productQuery.isLoading || urlsQuery.isLoading || pricesLoading) return <DetailSkeleton />;
+
+  if (productQuery.isError || !product) {
     return (
-      <div className="p-6">
-        <Link href="/products" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4">
-          <ArrowLeft size={14} /> Back to Products
+      <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
+        <Link
+          href="/products"
+          className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink mb-4"
+        >
+          <ArrowLeft size={14} /> Back to products
         </Link>
-        <Card>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-              <p className="text-sm text-gray-500">Product not found.</p>
-              <Button variant="outline" size="sm" onClick={fetchData}>Retry</Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-card border border-line rounded-2xl shadow-card">
+          <ErrorState
+            title="Product not found"
+            description="We couldn't load this product. It may have been removed, or the API is unreachable."
+            onRetry={refresh}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-2 text-sm text-gray-400">
-        <Link href="/products" className="hover:text-gray-600">Product Catalog</Link>
-        <span>/</span>
-        <span className="text-gray-900">Product Details</span>
-        <div className="flex-1" />
-        <Link href="/products" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
-          <ArrowLeft size={14} /> Back to Products
-        </Link>
-        <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>
-          <Plus size={14} /> Add Product URL
-        </Button>
-      </div>
+    <div>
+      <ProductHero
+        product={product}
+        position={insights.position}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        onEdit={() => setShowEdit(true)}
+        onAddUrl={() => setShowAddUrl(true)}
+        onDelete={() => setShowDelete(true)}
+      />
 
-      <Card>
-        <CardContent className="p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs font-medium text-gray-500">Product ID</p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">{product.ProductID}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500">Item Name</p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">{product.ItemName}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500">Brand</p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">{product.Brand}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500">Current Price</p>
-              <p className="text-sm font-semibold text-gray-900 mt-0.5">
-                {product.CurrentPrice != null
-                  ? new Intl.NumberFormat("en-IN", {
-                      style: "currency",
-                      currency: "INR",
-                      maximumFractionDigits: 0,
-                    }).format(product.CurrentPrice)
-                  : "—"}
-              </p>
-            </div>
+      <div className="p-5 sm:p-8 space-y-6 max-w-[1600px] mx-auto">
+        {/* Without the comparison feed there is no market to describe, so the
+            market sections are withheld rather than rendered empty. */}
+        {pricesError ? (
+          <div className="bg-card border border-line rounded-2xl shadow-card">
+            <ErrorState
+              title="Competitor prices unavailable"
+              description="The product loaded, but the price comparison feed didn't. Market position, gaps and recommendations need it."
+              onRetry={refetchMerged}
+            />
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          <>
+            <ProductKpis insights={insights} lastUpdated={product.LastUpdated} />
 
-      {sorted.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Price Comparison</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-gray-500 font-medium">Platform</th>
-                    <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-wide text-gray-500 font-medium">Current Price</th>
-                    <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-wide text-gray-500 font-medium">Product Link</th>
-                    <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-wide text-gray-500 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((p) => (
-                    <tr key={p.productPlatformId} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <div className="flex items-center gap-2">
-                          {p.name}
-                          {p.price === lowestPrice && (
-                            <Badge variant="success">Best Price</Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                        {p.price !== null ? formatPrice(p.price) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {p.url ? (
-                          <a
-                            href={p.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"
-                          >
-                            Open <ExternalLink size={12} />
-                          </a>
-                        ) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-3">
-                          <button
-                            onClick={() => setEditTarget(p)}
-                            className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"
-                          >
-                            <Pencil size={12} />
-                            Edit URL
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <MarketplaceTable
+              insights={insights}
+              onEditUrl={setEditUrlTarget}
+              onAddUrl={() => setShowAddUrl(true)}
+            />
+
+            <MarketplaceCards
+              insights={insights}
+              onEditUrl={setEditUrlTarget}
+              onAddUrl={() => setShowAddUrl(true)}
+            />
+
+            {/* Read left to right: what the market looks like, then what to do. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <MarketInsights insights={insights} />
+              <Recommendations insights={insights} />
+              <CoverageGaps insights={insights} onAddUrl={() => setShowAddUrl(true)} />
+              <PriceHistorySection />
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-              <p className="text-sm text-gray-500">No product URLs have been mapped yet.</p>
-              <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>
-                <Plus size={14} /> Add Product URL
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {sorted.map((p) => (
-          <Card key={p.productPlatformId}>
-            <CardHeader>
-              <CardTitle>
-                <div className="flex items-center gap-2">
-                  {p.name}
-                  {p.price === lowestPrice && (
-                    <Badge variant="success">Best Price</Badge>
-                  )}
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {p.url && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  <a
-                    href={p.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium"
-                  >
-                    <ExternalLink size={14} />
-                    Open Product Page
-                  </a>
-                  <button
-                    onClick={() => setEditTarget(p)}
-                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium"
-                  >
-                    <Pencil size={14} />
-                    Edit URL
-                  </button>
-                </div>
-              )}
-
-              {p.price !== null ? (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Current Price</p>
-                  <p className="text-base font-bold text-gray-900">{formatPrice(p.price)}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">No price data available.</p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+          </>
+        )}
       </div>
 
-      {editTarget && (
+      {editUrlTarget && editUrlTarget.productPlatformId !== null && (
         <EditProductUrlDialog
-          open={editTarget !== null}
-          onClose={() => setEditTarget(null)}
-          productPlatformId={editTarget.productPlatformId}
+          open
+          onClose={() => setEditUrlTarget(null)}
+          productPlatformId={editUrlTarget.productPlatformId}
           productId={productId}
-          platformId={editTarget.platformId}
-          platformName={editTarget.name}
-          productUrl={editTarget.url}
+          platformId={editUrlTarget.platformId ?? 0}
+          platformName={editUrlTarget.label}
+          productUrl={editUrlTarget.url ?? ""}
           onSuccess={() => {
-            setEditTarget(null);
-            fetchData();
+            setEditUrlTarget(null);
+            refresh();
           }}
         />
       )}
+
       <AddProductUrlDialog
-        open={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
+        open={showAddUrl}
+        onClose={() => setShowAddUrl(false)}
         productId={productId}
         productName={product.ItemName}
-        existingPlatformIds={platforms.map((p) => p.platformId)}
+        existingPlatformIds={mapped.map((m) => m.platformId)}
         onSuccess={() => {
-          setShowAddDialog(false);
-          fetchData();
+          setShowAddUrl(false);
+          refresh();
         }}
+      />
+
+      <EditProductDialog
+        open={showEdit}
+        product={product}
+        onClose={() => setShowEdit(false)}
+        onSuccess={refresh}
+      />
+
+      <DeleteProductDialog
+        open={showDelete}
+        product={product}
+        onClose={() => setShowDelete(false)}
+        onSuccess={() => router.push("/products")}
       />
     </div>
   );
