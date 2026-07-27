@@ -8,7 +8,6 @@ import {
   Bell,
   Package,
   Store,
-  Settings,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -30,10 +29,6 @@ const NAV_ITEMS = [
       { href: "/products", label: "Product Catalog", icon: Package },
       { href: "/competitors", label: "Competitors", icon: Store },
     ],
-  },
-  {
-    section: "System",
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
   },
 ];
 
