@@ -1,4 +1,5 @@
 import type { Position, Priority } from "./metrics";
+import type { ListingStatus } from "./product-detail";
 
 /**
  * Chart mark colours, validated with the dataviz palette validator against the
@@ -61,6 +62,32 @@ export const POSITION_DOT: Record<Position, string> = {
   matching: "bg-amber-500",
   above: "bg-red-500",
   unlisted: "bg-gray-400",
+};
+
+/**
+ * One marketplace listing, described from our seat: "below us" and "above us"
+ * are statements about our price, not theirs. Green marks the market benchmark
+ * (the cheapest listing) — the gap column carries the good/bad reading.
+ */
+export const LISTING_COPY: Record<ListingStatus, string> = {
+  cheapest: "Cheapest",
+  below: "Below us",
+  above: "Above us",
+  missing: "Not listed",
+};
+
+export const LISTING_PILL: Record<ListingStatus, string> = {
+  cheapest: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  below: "bg-amber-50 text-amber-700 ring-amber-200",
+  above: "bg-slate-50 text-slate-600 ring-slate-200",
+  missing: "bg-gray-50 text-gray-500 ring-gray-200",
+};
+
+export const LISTING_DOT: Record<ListingStatus, string> = {
+  cheapest: "bg-emerald-500",
+  below: "bg-amber-500",
+  above: "bg-slate-400",
+  missing: "bg-gray-300",
 };
 
 export const PRIORITY_COPY: Record<Priority, string> = {
