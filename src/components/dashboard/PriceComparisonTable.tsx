@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,7 +11,6 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import {
-  Search,
   RefreshCw,
   Download,
   ChevronLeft,
@@ -20,24 +20,21 @@ import {
   ChevronDown,
   Trophy,
 } from "lucide-react";
-import { useProductsWithPrices, useBrands } from "@/hooks/useQueries";
-import { Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 import { formatPrice } from "@/lib/utils";
+import {
+  MARKETPLACES,
+  ourRank,
+  positionOf,
+  priceOf,
+  urlOf,
+  type Position,
+} from "@/lib/metrics";
+import { POSITION_COPY, POSITION_PILL, rupees } from "@/lib/viz";
+import { useDashboardFilters } from "./DashboardFilters";
 import type { MergedProduct } from "@/types";
-
-const COMPETITOR_COLS = [
-  { key: "AmazonPrice" as const, urlKey: "AmazonURL" as const, label: "Amazon" },
-  { key: "FlipkartPrice" as const, urlKey: "FlipkartURL" as const, label: "Flipkart" },
-  { key: "PoorvikaPrice" as const, urlKey: "PoorvikaURL" as const, label: "Poorvika" },
-  { key: "CromaPrice" as const, urlKey: "CromaURL" as const, label: "Croma" },
-  { key: "RelianceDigitalPrice" as const, urlKey: "RelianceDigitalURL" as const, label: "Reliance" },
-  { key: "SangeethaMobilesPrice" as const, urlKey: "SangeethaMobilesURL" as const, label: "Sangeetha" },
-  { key: "TheChennaiMobilesPrice" as const, urlKey: "TheChennaiMobilesURL" as const, label: "Chennai Mobiles" },
-  { key: "sathyaPrice" as const, urlKey: "sathyaURL" as const, label: "Sathya" },
-];
 
 const BRAND_BADGE_STYLES = [
   "bg-indigo-50 text-indigo-700",
@@ -56,6 +53,20 @@ function brandBadgeStyle(brand: string): string {
   return BRAND_BADGE_STYLES[hash % BRAND_BADGE_STYLES.length];
 }
 
+/** Status always ships an icon glyph plus a word — never colour alone. */
+function PositionPill({ position }: { position: Position }) {
+  const copy = POSITION_COPY[position];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full ring-1 ring-inset whitespace-nowrap ${POSITION_PILL[position]}`}
+      title={copy.label}
+    >
+      <span aria-hidden="true" className="text-[9px] leading-none">{copy.glyph}</span>
+      {copy.short}
+    </span>
+  );
+}
+
 function PriceCell({
   price,
   url,
@@ -67,9 +78,8 @@ function PriceCell({
   lowest: number | null;
   highest: number | null;
 }) {
-  if (price === null || price === undefined || price <= 0) {
-    return <span className="text-gray-300">—</span>;
-  }
+  if (price === null) return <span className="text-gray-300">—</span>;
+
   const isLowest = lowest !== null && price === lowest;
   const isHighest = highest !== null && price === highest && highest !== lowest;
   const diff = lowest !== null && price > lowest ? price - lowest : null;
@@ -96,7 +106,7 @@ function PriceCell({
         {formatPrice(price)}
       </a>
       {diff !== null && diff > 0 && (
-        <span className="tnum text-[10px] leading-3 text-gray-400">+{formatPrice(diff).replace("₹", "₹")} vs low</span>
+        <span className="tnum text-[10px] leading-3 text-gray-400">+{rupees(diff)} vs low</span>
       )}
     </span>
   );
@@ -117,26 +127,39 @@ function pageList(current: number, count: number): (number | "…")[] {
 }
 
 export function exportCsv(rows: MergedProduct[]) {
-  const headers = ["Product", "Brand", "Category", "Our Price", ...COMPETITOR_COLS.map((c) => c.label), "Lowest Price", "Lowest Platform", "Gap vs Best", "Status"];
+  const headers = [
+    "Product",
+    "Brand",
+    "Category",
+    "Our Price",
+    ...MARKETPLACES.map((c) => c.label),
+    "Cheapest Price",
+    "Cheapest Seller",
+    "Our Rank",
+    "Gap vs Best",
+    "Status",
+  ];
   const esc = (v: string | number | null) => {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [
     headers.join(","),
-    ...rows.map((r) =>
-      [
+    ...rows.map((r) => {
+      const rank = ourRank(r);
+      return [
         esc(r.ItemName),
         esc(r.Brand),
         esc(r.Category),
         esc(r.CurrentPrice),
-        ...COMPETITOR_COLS.map((c) => esc(r[c.key])),
+        ...MARKETPLACES.map((c) => esc(priceOf(r, c))),
         esc(r.lowestPrice),
         esc(r.lowestPlatform),
+        esc(rank ? `${rank.rank} of ${rank.of}` : ""),
         esc(r.priceGap),
-        esc(r.status),
-      ].join(",")
-    ),
+        esc(POSITION_COPY[positionOf(r)].label),
+      ].join(",");
+    }),
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -148,27 +171,11 @@ export function exportCsv(rows: MergedProduct[]) {
 }
 
 export function PriceComparisonTable() {
-  const [search, setSearch] = useState("");
-  const [brand, setBrand] = useState("");
-  const [status, setStatus] = useState("");
-  const [competitor, setCompetitor] = useState("");
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const router = useRouter();
+  const { products, isLoading, isError, isFetching, refetch, activeCount, reset } =
+    useDashboardFilters();
+  const [sorting, setSorting] = useState<SortingState>([{ id: "priceGap", desc: true }]);
   const [pageIndex, setPageIndex] = useState(0);
-
-  const { data: brands } = useBrands();
-  const { data: products, isLoading, isError, refetch, isFetching } = useProductsWithPrices({
-    search: search || undefined,
-    brand: brand || undefined,
-    status: status || undefined,
-  });
-
-  const filteredProducts = useMemo(() => {
-    if (!products) return [];
-    if (!competitor) return products;
-    const col = COMPETITOR_COLS.find((c) => c.label === competitor);
-    if (!col) return products;
-    return products.filter((p) => p[col.key] !== null && (p[col.key] as number) > 0);
-  }, [products, competitor]);
 
   const columns: ColumnDef<MergedProduct>[] = useMemo(() => {
     const cols: ColumnDef<MergedProduct>[] = [
@@ -177,7 +184,10 @@ export function PriceComparisonTable() {
         header: "Product",
         enableSorting: true,
         cell: (info) => (
-          <span className="font-medium text-ink text-[13px] block max-w-[240px] truncate" title={info.getValue() as string}>
+          <span
+            className="font-medium text-ink text-[13px] block max-w-[240px] truncate"
+            title={info.getValue() as string}
+          >
             {info.getValue() as string}
           </span>
         ),
@@ -188,93 +198,130 @@ export function PriceComparisonTable() {
         enableSorting: true,
         cell: (info) => {
           const b = info.getValue() as string;
-          return <span className={`text-[11px] font-medium px-2 py-1 rounded-md ${brandBadgeStyle(b)}`}>{b}</span>;
+          return (
+            <span className={`text-[11px] font-medium px-2 py-1 rounded-md ${brandBadgeStyle(b)}`}>
+              {b}
+            </span>
+          );
         },
+      },
+      {
+        id: "status",
+        header: "Status",
+        enableSorting: true,
+        accessorFn: (row) => positionOf(row),
+        cell: (info) => <PositionPill position={positionOf(info.row.original)} />,
+      },
+      {
+        accessorKey: "CurrentPrice",
+        header: "Our Price",
+        enableSorting: true,
+        cell: (info) => {
+          const price = info.getValue() as number | null;
+          if (price === null) return <span className="text-gray-300">—</span>;
+          return (
+            <span className="tnum text-[13px] font-semibold text-indigo-700 bg-indigo-50 ring-1 ring-inset ring-indigo-100 px-2 py-1 rounded-lg">
+              {formatPrice(price)}
+            </span>
+          );
+        },
+      },
+      {
+        id: "ourRank",
+        header: "Our Rank",
+        enableSorting: true,
+        // Unranked products sort last rather than pretending to be rank 0.
+        accessorFn: (row) => ourRank(row)?.rank ?? Number.MAX_SAFE_INTEGER,
+        cell: (info) => {
+          const rank = ourRank(info.row.original);
+          if (!rank) return <span className="text-gray-300">—</span>;
+          const best = rank.rank === 1;
+          return (
+            <span
+              className={`tnum text-[12px] font-semibold ${best ? "text-emerald-700" : "text-ink"}`}
+              title={`Our price is ${rank.rank} cheapest of ${rank.of} sellers`}
+            >
+              {rank.rank}
+              <span className="text-ink-muted font-normal"> of {rank.of}</span>
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "lowestPlatform",
+        header: "Cheapest Seller",
+        enableSorting: true,
+        cell: (info) => {
+          const platform = info.getValue() as string | null;
+          if (!platform) return <span className="text-gray-300">—</span>;
+          return (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100 whitespace-nowrap">
+              <Trophy size={10} />
+              {platform}
+            </span>
+          );
+        },
+      },
+      {
+        id: "priceGap",
+        header: "Gap vs Best",
+        enableSorting: true,
+        accessorFn: (row) => row.priceGap ?? Number.NEGATIVE_INFINITY,
+        cell: (info) => {
+          const gap = info.row.original.priceGap;
+          if (gap === null) return <span className="text-gray-300">—</span>;
+          if (gap === 0) return <span className="tnum text-xs font-medium text-ink-muted">₹0</span>;
+          const losing = gap > 0;
+          return (
+            <span
+              className={`tnum text-xs font-semibold ${losing ? "text-red-600" : "text-emerald-700"}`}
+            >
+              {losing ? "+" : "−"}
+              {rupees(Math.abs(gap))}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "lowestPrice",
+        header: "Best Price",
+        enableSorting: true,
+        cell: (info) => (
+          <span className="tnum font-semibold text-ink text-[13px]">
+            {formatPrice(info.getValue() as number | null)}
+          </span>
+        ),
       },
     ];
 
-    cols.push({
-      accessorKey: "CurrentPrice",
-      header: "Our Price",
-      enableSorting: true,
-      cell: (info) => {
-        const price = info.getValue() as number | null;
-        if (price === null) return <span className="text-gray-300">—</span>;
-        return (
-          <span className="tnum text-[13px] font-semibold text-indigo-700 bg-indigo-50 ring-1 ring-inset ring-indigo-100 px-2 py-1 rounded-lg">
-            {formatPrice(price)}
-          </span>
-        );
-      },
-    });
-
-    for (const { key, urlKey, label } of COMPETITOR_COLS) {
+    for (const marketplace of MARKETPLACES) {
       cols.push({
-        accessorKey: key,
-        header: label,
-        enableSorting: false,
+        id: marketplace.label,
+        header: marketplace.label,
+        enableSorting: true,
+        accessorFn: (row) => priceOf(row, marketplace) ?? Number.MAX_SAFE_INTEGER,
         cell: (info) => {
           const row = info.row.original;
-          const allPrices = COMPETITOR_COLS.map((c) => row[c.key]).filter((p): p is number => p !== null && p > 0);
-          const lowest = allPrices.length > 0 ? Math.min(...allPrices) : null;
-          const highest = allPrices.length > 0 ? Math.max(...allPrices) : null;
-          return <PriceCell price={row[key]} url={row[urlKey]} lowest={lowest} highest={highest} />;
+          const all = MARKETPLACES.map((c) => priceOf(row, c)).filter(
+            (p): p is number => p !== null
+          );
+          return (
+            <PriceCell
+              price={priceOf(row, marketplace)}
+              url={urlOf(row, marketplace)}
+              lowest={all.length ? Math.min(...all) : null}
+              highest={all.length ? Math.max(...all) : null}
+            />
+          );
         },
       });
     }
-
-    cols.push({
-      accessorKey: "lowestPrice",
-      header: "Best Price",
-      enableSorting: true,
-      cell: (info) => (
-        <span className="tnum font-semibold text-ink text-[13px]">{formatPrice(info.getValue() as number | null)}</span>
-      ),
-    });
-
-    cols.push({
-      accessorKey: "lowestPlatform",
-      header: "Winner",
-      enableSorting: true,
-      cell: (info) => {
-        const platform = info.getValue() as string | null;
-        if (!platform) return <span className="text-gray-300">—</span>;
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100">
-            <Trophy size={10} />
-            {platform}
-          </span>
-        );
-      },
-    });
-
-    cols.push({
-      id: "priceGap",
-      header: "vs Best",
-      enableSorting: true,
-      accessorFn: (row) => row.priceGap ?? 0,
-      cell: (info) => {
-        const row = info.row.original;
-        if (row.priceGap === null) return <span className="text-gray-300">—</span>;
-        if (row.priceGap === 0) {
-          return <span className="tnum text-xs font-medium text-ink-muted">Matching</span>;
-        }
-        // Positive = we are pricier than the cheapest competitor.
-        const losing = row.priceGap > 0;
-        return (
-          <span className={`tnum text-xs font-semibold ${losing ? "text-red-600" : "text-emerald-700"}`}>
-            {losing ? "+" : "−"}
-            {formatPrice(Math.abs(row.priceGap)).replace("₹", "₹")}
-          </span>
-        );
-      },
-    });
 
     return cols;
   }, []);
 
   const table = useReactTable({
-    data: filteredProducts,
+    data: products,
     columns,
     state: { sorting, pagination: { pageIndex, pageSize: 10 } },
     onSortingChange: setSorting,
@@ -287,81 +334,33 @@ export function PriceComparisonTable() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const totalRows = filteredProducts.length;
+  const totalRows = products.length;
   const pageCount = table.getPageCount();
+  const safePage = Math.min(pageIndex, Math.max(0, pageCount - 1));
 
   return (
-    <div className="bg-card border border-line rounded-2xl overflow-hidden shadow-card">
-      <div className="px-6 pt-5 pb-4 flex items-center gap-3">
+    <section
+      aria-label="Price comparison"
+      className="bg-card border border-line rounded-2xl overflow-hidden shadow-card"
+    >
+      <div className="px-6 pt-5 pb-4 flex items-center gap-3 flex-wrap">
         <div>
           <h2 className="text-base font-semibold text-ink tracking-tight">Price Comparison</h2>
-          <p className="text-xs text-ink-muted mt-0.5">Live prices across {COMPETITOR_COLS.length} marketplaces</p>
+          <p className="text-xs text-ink-muted mt-0.5">
+            Every column sorts — click a row to open the product
+          </p>
         </div>
-        <div className="flex-1" />
-        <span className="text-xs text-ink-muted tnum">{totalRows} products</span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-        <div className="relative w-60">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" />
-          <Input
-            placeholder="Search products..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPageIndex(0);
-            }}
-            aria-label="Search products"
-          />
-        </div>
-        <Select
-          value={brand}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-            setBrand(e.target.value);
-            setPageIndex(0);
-          }}
-          className="w-36"
-          aria-label="Filter by brand"
-        >
-          <option value="">All brands</option>
-          {brands?.map((b) => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </Select>
-        <Select
-          value={competitor}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-            setCompetitor(e.target.value);
-            setPageIndex(0);
-          }}
-          className="w-44"
-          aria-label="Filter by competitor"
-        >
-          <option value="">All competitors</option>
-          {COMPETITOR_COLS.map((c) => (
-            <option key={c.key} value={c.label}>Listed on {c.label}</option>
-          ))}
-        </Select>
-        <Select
-          value={status}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-            setStatus(e.target.value);
-            setPageIndex(0);
-          }}
-          className="w-40"
-          aria-label="Filter by availability"
-        >
-          <option value="">All availability</option>
-          <option value="available">Available</option>
-          <option value="missing">Missing Competitors</option>
-        </Select>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />
           Refresh
         </Button>
-        <Button variant="outline" size="sm" onClick={() => exportCsv(filteredProducts)} disabled={totalRows === 0}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => exportCsv(products)}
+          disabled={totalRows === 0}
+        >
           <Download size={13} />
           Export CSV
         </Button>
@@ -370,12 +369,25 @@ export function PriceComparisonTable() {
       {isLoading ? (
         <TableSkeleton rows={6} cols={12} />
       ) : isError ? (
-        <ErrorState title="Failed to load products" description="Unable to fetch price comparison data." onRetry={() => refetch()} />
+        <ErrorState
+          title="Failed to load products"
+          description="Unable to fetch price comparison data."
+          onRetry={() => refetch()}
+        />
       ) : totalRows === 0 ? (
-        <EmptyState title="No products match your filters" description="Try adjusting your search or filters." />
+        <EmptyState
+          title="No products match your filters"
+          description="Try widening the filters above."
+          action={activeCount > 0 ? { label: "Clear filters", onClick: reset } : undefined}
+        />
       ) : (
         <>
-          <div className="overflow-x-auto max-h-[560px] overflow-y-auto border-t border-line">
+          {/* Hold the previous render at reduced opacity — no skeleton flash. */}
+          <div
+            className={`overflow-x-auto max-h-[560px] overflow-y-auto border-t border-line transition-opacity duration-200 ${
+              isFetching ? "opacity-60" : ""
+            }`}
+          >
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -414,8 +426,22 @@ export function PriceComparisonTable() {
               <tbody>
                 {table.getRowModel().rows.map((row, rowIdx) => {
                   const zebra = rowIdx % 2 === 1 ? "bg-gray-50/60" : "bg-card";
+                  const goToProduct = () => router.push(`/products/${row.original.ProductID}`);
                   return (
-                    <tr key={row.id} className="group cursor-default">
+                    <tr
+                      key={row.id}
+                      onClick={goToProduct}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          goToProduct();
+                        }
+                      }}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`View ${row.original.ItemName}`}
+                      className="group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                    >
                       {row.getVisibleCells().map((cell, idx) => (
                         <td
                           key={cell.id}
@@ -433,9 +459,9 @@ export function PriceComparisonTable() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center justify-between px-6 py-4 flex-wrap gap-3">
             <span className="text-xs text-ink-muted tnum">
-              Showing {pageIndex * 10 + 1}–{Math.min((pageIndex + 1) * 10, totalRows)} of {totalRows}
+              Showing {safePage * 10 + 1}–{Math.min((safePage + 1) * 10, totalRows)} of {totalRows}
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -446,16 +472,18 @@ export function PriceComparisonTable() {
               >
                 <ChevronLeft size={14} />
               </button>
-              {pageList(pageIndex, pageCount).map((p, i) =>
+              {pageList(safePage, pageCount).map((p, i) =>
                 p === "…" ? (
-                  <span key={`e${i}`} className="w-8 text-center text-xs text-gray-400">…</span>
+                  <span key={`e${i}`} className="w-8 text-center text-xs text-gray-400">
+                    …
+                  </span>
                 ) : (
                   <button
                     key={p}
                     onClick={() => table.setPageIndex(p)}
-                    aria-current={pageIndex === p ? "page" : undefined}
+                    aria-current={safePage === p ? "page" : undefined}
                     className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs transition-colors ${
-                      pageIndex === p
+                      safePage === p
                         ? "bg-primary text-white font-semibold shadow-card"
                         : "border border-line text-ink-muted hover:bg-gray-50"
                     }`}
@@ -476,6 +504,6 @@ export function PriceComparisonTable() {
           </div>
         </>
       )}
-    </div>
+    </section>
   );
 }

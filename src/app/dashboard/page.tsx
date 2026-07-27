@@ -5,69 +5,101 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { PriceComparisonTable, exportCsv } from "@/components/dashboard/PriceComparisonTable";
 import { DownloadAgentButton } from "@/components/dashboard/DownloadAgentButton";
+import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import {
-  PricePositionChart,
-  CompetitorBenchmarkChart,
-  BiggestPriceGapsChart,
-  PriceVsMarketChart,
-} from "@/components/charts/DashboardCharts";
-import { useDashboardSummary, useProductsWithPrices, useNotifications } from "@/hooks/useQueries";
-import { formatDateTime } from "@/lib/utils";
+  DashboardFilterProvider,
+  DashboardFilterBar,
+  useDashboardFilters,
+} from "@/components/dashboard/DashboardFilters";
+import { PricePositionBar } from "@/components/charts/PricePositionBar";
+import { CompetitorWinsChart } from "@/components/charts/CompetitorWinsChart";
+import { BiggestGapsList } from "@/components/charts/BiggestGapsList";
+import { PriceDumbbell } from "@/components/charts/PriceDumbbell";
+import { CompetitorHeatmap } from "@/components/charts/CompetitorHeatmap";
+import { PriceGapTrend } from "@/components/charts/PriceGapTrend";
+import { useNotifications } from "@/hooks/useQueries";
 import { Button } from "@/components/ui/Button";
 
-export default function DashboardPage() {
-  const { data: summary } = useDashboardSummary();
-  const { data: products } = useProductsWithPrices();
+function HeaderActions() {
+  const { products } = useDashboardFilters();
   const { data: notifications } = useNotifications();
   const unreadCount = notifications?.filter((n) => !n.read).length ?? 0;
 
   return (
-    <div>
+    <>
+      <DownloadAgentButton />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => exportCsv(products)}
+        disabled={products.length === 0}
+      >
+        <Download size={14} />
+        Export
+      </Button>
+      <Link
+        href="/notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        className="relative w-9 h-9 flex items-center justify-center rounded-lg border border-line text-ink-muted hover:bg-gray-50 hover:text-ink transition-colors"
+      >
+        <Bell size={15} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-danger text-white text-[9px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">
+            {unreadCount}
+          </span>
+        )}
+      </Link>
+    </>
+  );
+}
+
+function DashboardBody() {
+  return (
+    <>
       <PageHeader
         title="Dashboard"
-        subtitle={summary ? `Last updated ${formatDateTime(summary.lastScanTime)}` : "Loading latest scan..."}
+        subtitle="Competitive price position across 8 marketplaces"
       >
-        <DownloadAgentButton />
-        <Button variant="outline" size="sm" onClick={() => exportCsv(products ?? [])} disabled={!products?.length}>
-          <Download size={14} />
-          Export
-        </Button>
-        <Link
-          href="/notifications"
-          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-          className="relative w-9 h-9 flex items-center justify-center rounded-lg border border-line text-ink-muted hover:bg-gray-50 hover:text-ink transition-colors"
-        >
-          <Bell size={15} />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-danger text-white text-[9px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">
-              {unreadCount}
-            </span>
-          )}
-        </Link>
+        <HeaderActions />
       </PageHeader>
 
-      <div className="p-8 space-y-8 max-w-[1600px] mx-auto">
-        <section aria-label="Overview">
-          <KpiCards />
-        </section>
+      <div className="p-5 sm:p-8 space-y-6 max-w-[1600px] mx-auto">
+        {/* One filter row, above everything it scopes. */}
+        <DashboardFilterBar />
 
-        <section aria-label="Price comparison">
-          <PriceComparisonTable />
-        </section>
+        <KpiCards />
 
-        <section aria-label="Competitor insights">
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-ink tracking-tight">Competitor Insights</h2>
-            <p className="text-sm text-ink-muted mt-1">Where we stand against the market, and what to act on</p>
+        <PriceComparisonTable />
+
+        {/* Two questions of the same shape sit side by side. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <PricePositionBar />
+          <CompetitorWinsChart />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <BiggestGapsList />
+          <PriceGapTrend />
+        </div>
+
+        {/* The heatmap is the widest artefact; alerts ride beside it as a rail. */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+          <div className="xl:col-span-2">
+            <CompetitorHeatmap />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <PricePositionChart />
-            <CompetitorBenchmarkChart />
-            <BiggestPriceGapsChart />
-            <PriceVsMarketChart />
-          </div>
-        </section>
+          <AlertsPanel />
+        </div>
+
+        <PriceDumbbell />
       </div>
-    </div>
+    </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <DashboardFilterProvider>
+      <DashboardBody />
+    </DashboardFilterProvider>
   );
 }
