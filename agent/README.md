@@ -5,7 +5,7 @@ Marketplaces block datacenter IPs (Vercel etc.), but a home/office connection
 is a residential IP, so scraping works — same reason it works on localhost.
 
 The agent talks directly to the backend API — the PHP API on Hostinger
-(`https://yourdomain.com/api`, set `apiBase` in `agent-config.json`):
+(`https://smartphonescrape.dotsmart.in/api` by default; `agent-config.json` can override it):
 fetch active products → fetch each product's platform URLs → scrape with the
 same scrapers as the dashboard (`../src/lib/scrapers`) → save prices with
 `Source: "Desktop Agent"`.
@@ -49,7 +49,7 @@ node dist/agent.cjs --limit 2     only scan the first N products
 
 ```json
 {
-  "apiBase": "https://yourdomain.com/api",
+  "apiBase": "https://smartphonescrape.dotsmart.in/api",
   "intervalMinutes": 60,
   "gatewayUrl": "",
   "proxyUrl": ""

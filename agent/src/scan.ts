@@ -15,7 +15,8 @@ export interface AgentConfig {
 }
 
 export const DEFAULT_CONFIG: AgentConfig = {
-  apiBase: "https://api.gogizmo.co",
+  // The PHP API on Hostinger; agent-config.json can point elsewhere.
+  apiBase: "https://smartphonescrape.dotsmart.in/api",
   intervalMinutes: 0,
 };
 
