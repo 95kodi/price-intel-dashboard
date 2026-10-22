@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import { AlertTriangle, PackageX, EyeOff, CheckCircle2, ArrowRight } from "lucide-react";
 import { useDashboardFilters } from "./DashboardFilters";
 import { computeMetrics, missingOn, ACTION_THRESHOLD, positionOf } from "@/lib/metrics";
@@ -131,7 +132,7 @@ export function AlertsPanel() {
             return (
               <li key={a.id}>
                 {a.productId ? (
-                  <Link href={`/products/${a.productId}`} className="block hover:opacity-80 transition-opacity">
+                  <Link href={productHref(a.productId)} className="block hover:opacity-80 transition-opacity">
                     {inner}
                   </Link>
                 ) : (

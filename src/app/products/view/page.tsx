@@ -1,6 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { KpiCardSkeleton, Skeleton } from "@/components/ui/Skeleton";
@@ -50,10 +50,19 @@ function DetailSkeleton() {
   );
 }
 
+// useSearchParams needs a Suspense boundary in a static export.
 export default function ProductDetailsPage() {
-  const params = useParams();
+  return (
+    <Suspense fallback={<DetailSkeleton />}>
+      <ProductDetails />
+    </Suspense>
+  );
+}
+
+function ProductDetails() {
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const productId = Number(params.id);
+  const productId = Number(searchParams.get("id"));
 
   const [refreshing, setRefreshing] = useState(false);
   const [editUrlTarget, setEditUrlTarget] = useState<MarketRow | null>(null);

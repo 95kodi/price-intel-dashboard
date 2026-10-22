@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import { Edit2, Trash2, Package, Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
@@ -187,7 +188,7 @@ export function ProductTable() {
                   <tr key={p.ProductID} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2.5 max-w-[200px]">
                       <Link
-                        href={`/products/${p.ProductID}`}
+                        href={productHref(p.ProductID)}
                         className="font-medium text-gray-900 hover:text-blue-600 hover:underline truncate block"
                         title={p.ItemName}
                       >

@@ -1,0 +1,28 @@
+# Dashboard (static export) in public_html. The PHP API lives in public_html/api
+# and has its own .htaccess.
+Options -Indexes
+DirectoryIndex index.html
+ErrorDocument 404 /404.html
+
+RewriteEngine On
+# The exported index.html only redirects after its JS loads; do it up front.
+RewriteRule ^$ /dashboard/ [R=302,L]
+# Old /products/123 links → the static detail page.
+RewriteRule ^products/(\d+)/?$ /products/view/?id=$1 [R=301,L]
+
+# Next's router prefetches flattened names (dashboard/__next.dashboard.__PAGE__.txt)
+# but the export writes them as folders (dashboard/__next.dashboard/__PAGE__.txt).
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^((?:[^/]+/)*)__next\.([^./]+)\.([^./]+)\.__PAGE__\.txt$ $1__next.$2/$3/__PAGE__.txt [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^((?:[^/]+/)*)__next\.([^./]+)\.([^./]+)\.txt$ $1__next.$2/$3.txt [L]
+
+<IfModule mod_headers.c>
+  # Hashed build assets never change; HTML must always revalidate.
+  <FilesMatch "\.(js|css|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import { useDashboardFilters } from "@/components/dashboard/DashboardFilters";
 import { MARKETPLACES, priceOf } from "@/lib/metrics";
 import { STATUS_MARK, POSITION_COPY, rupees, truncate } from "@/lib/viz";
@@ -96,7 +97,7 @@ export function CompetitorHeatmap() {
                     <tr key={product.ProductID} className="group">
                       <td className="pr-3 py-1 sticky left-0 bg-card group-hover:bg-indigo-50/40 z-10 transition-colors">
                         <Link
-                          href={`/products/${product.ProductID}`}
+                          href={productHref(product.ProductID)}
                           className="text-[12px] text-ink hover:text-primary transition-colors block max-w-[190px] truncate"
                           title={product.ItemName}
                         >

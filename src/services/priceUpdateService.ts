@@ -1,3 +1,5 @@
+import { API_BASE } from "./api-client";
+
 export interface SavePriceHistoryPayload {
   PriceID: number;
   ProductPlatformID: number;
@@ -9,7 +11,7 @@ export interface SavePriceHistoryPayload {
 }
 
 export async function savePriceHistory(payload: SavePriceHistoryPayload): Promise<unknown> {
-  const response = await fetch("https://api.gogizmo.co/platform-price-history/save", {
+  const response = await fetch(`${API_BASE}/platform-price-history/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

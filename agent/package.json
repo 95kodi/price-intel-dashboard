@@ -40,8 +40,10 @@
   "scripts": {
     "bundle": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --external:chromium-bidi/* --external:@sparticuz/chromium --outfile=dist/agent.cjs && node -e \"fs.copyFileSync('node_modules/playwright-core/browsers.json', 'browsers.json')\"",
     "bundle:app": "esbuild electron/main.ts --bundle --platform=node --target=node20 --format=cjs --external:electron --external:chromium-bidi/* --external:@sparticuz/chromium --outfile=dist/main.cjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload.cjs && node -e \"fs.copyFileSync('node_modules/playwright-core/browsers.json', 'browsers.json')\"",
+    "bundle:models": "esbuild src/models-scan.ts --bundle --platform=node --target=node20 --format=cjs --external:chromium-bidi/* --external:@sparticuz/chromium --outfile=dist/models-scan.cjs && node -e \"fs.copyFileSync('node_modules/playwright-core/browsers.json', 'browsers.json')\"",
     "start": "npm run bundle && node dist/agent.cjs",
     "app:dev": "npm run bundle:app && electron dist/main.cjs",
+    "scan:models": "npm run bundle:models && node dist/models-scan.cjs",
     "build:cli": "npm run bundle && pkg . --output dist/price-intel-agent.exe",
     "build:app": "npm run bundle:app && electron-builder --win"
   },

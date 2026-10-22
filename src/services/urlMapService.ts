@@ -1,3 +1,5 @@
+import { API_BASE } from "./api-client";
+
 export interface UpdateUrlPayload {
   ProductPlatformID: number;
   ProductID: number;
@@ -12,7 +14,7 @@ export interface UpdateUrlResponse {
 
 export async function updateProductUrl(payload: UpdateUrlPayload): Promise<UpdateUrlResponse> {
   console.log("Update URL Payload", JSON.stringify(payload, null, 2));
-  const response = await fetch("https://api.gogizmo.co/urlmap/update-url", {
+  const response = await fetch(`${API_BASE}/urlmap/update-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

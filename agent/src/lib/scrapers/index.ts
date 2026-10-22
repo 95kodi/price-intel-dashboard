@@ -49,6 +49,7 @@ export function getParser(platform: string): ScraperModule | null {
 
     case "vijay sales":
     case "vijayasales":
+    case "vijaysales":
       return vijaysales;
 
     case "the chennai mobiles":

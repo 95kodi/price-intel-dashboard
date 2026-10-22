@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/States";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, productHref } from "@/lib/utils";
 import {
   MARKETPLACES,
   ourRank,
@@ -426,7 +426,7 @@ export function PriceComparisonTable() {
               <tbody>
                 {table.getRowModel().rows.map((row, rowIdx) => {
                   const zebra = rowIdx % 2 === 1 ? "bg-gray-50/60" : "bg-card";
-                  const goToProduct = () => router.push(`/products/${row.original.ProductID}`);
+                  const goToProduct = () => router.push(productHref(row.original.ProductID));
                   return (
                     <tr
                       key={row.id}

@@ -15,14 +15,15 @@ interface ApiError extends Error {
   response?: unknown;
 }
 
-const getBaseUrl = (): string => {
-  // In browser environment
-  if (typeof window !== "undefined") {
-    return process.env.NEXT_PUBLIC_API_URL || "https://api.gogizmo.co";
-  }
-  // In server environment
-  return process.env.NEXT_PUBLIC_API_URL || "https://api.gogizmo.co";
-};
+/**
+ * Base URL of the PHP API. The default "/api" is for Hostinger, where the
+ * static dashboard sits in public_html and the API in public_html/api — same
+ * origin, no CORS. Set NEXT_PUBLIC_API_URL (see .env.example) to point a
+ * local `npm run dev` or another host at it; it is baked in at build time.
+ */
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/+$/, "");
+
+const getBaseUrl = (): string => API_BASE;
 
 /**
  * Make a GET request to the API

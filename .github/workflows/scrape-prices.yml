@@ -1,0 +1,98 @@
+# Scheduled price scan: imports phone models from GoFix GetModelList into the
+# PHP API on Hostinger, then searches/scrapes each store in parallel and posts
+# prices back.
+#
+# Repo setup (Settings → Secrets and variables → Actions):
+#   Variables: API_BASE        e.g. https://yourdomain.com/api
+#   Secrets:   SCRAPE_TOKEN    same value as scrape_token in backend-php/config.php
+#              SCRAPER_GATEWAY_URL / SCRAPER_PROXY_URL   optional, for stores that block GitHub's IPs
+name: Scrape prices
+
+on:
+  schedule:
+    # 06:00, 12:00 and 18:00 IST.
+    - cron: "30 0,6,12 * * *"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Stores to scan, comma-separated (blank = all), e.g. flipkart,poorvika"
+        default: ""
+      limit:
+        description: "Only the newest N models (0 = all)"
+        default: "0"
+      research:
+        description: "Re-search models a store recently didn't have"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Scrape but don't save"
+        type: boolean
+        default: false
+
+# One scan at a time; a slow run shouldn't overlap the next schedule.
+concurrency:
+  group: scrape-prices
+  cancel-in-progress: false
+
+jobs:
+  sync-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Import models from GetModelList
+        run: |
+          curl -fsS --max-time 120 -X POST \
+            -H "X-Scrape-Token: ${{ secrets.SCRAPE_TOKEN }}" \
+            "${{ vars.API_BASE }}/models/sync"
+
+  scrape:
+    needs: sync-models
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        # One job per store, so a store that blocks GitHub doesn't hold up the rest.
+        platform: [flipkart, poorvika, sangeetha, chennai, sathya, croma, reliance, amazon]
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - name: Skip unless selected
+        id: pick
+        run: |
+          wanted=",${{ inputs.platforms }},"
+          if [ -z "${{ inputs.platforms }}" ] || [[ "${wanted// /}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.pick.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.pick.outputs.run == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install and bundle
+        if: steps.pick.outputs.run == 'true'
+        working-directory: agent
+        run: |
+          npm ci --no-audit --no-fund
+          npm run bundle:models
+
+      - name: Scan ${{ matrix.platform }}
+        if: steps.pick.outputs.run == 'true'
+        working-directory: agent
+        env:
+          API_BASE: ${{ vars.API_BASE }}
+          SCRAPE_TOKEN: ${{ secrets.SCRAPE_TOKEN }}
+          SCRAPER_GATEWAY_URL: ${{ secrets.SCRAPER_GATEWAY_URL }}
+          SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
+          SCAN_SOURCE: GitHub Actions
+        run: |
+          args="--platform ${{ matrix.platform }}"
+          [ "${{ inputs.limit }}" != "" ] && [ "${{ inputs.limit }}" != "0" ] && args="$args --limit ${{ inputs.limit }}"
+          [ "${{ inputs.research }}" = "true" ] && args="$args --research"
+          [ "${{ inputs.dry_run }}" = "true" ] && args="$args --dry-run"
+          node dist/models-scan.cjs $args
