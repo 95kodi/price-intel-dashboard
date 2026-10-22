@@ -1,0 +1,12 @@
+# Route every request under /api to index.php (Hostinger runs Apache/LiteSpeed).
+Options -Indexes
+RewriteEngine On
+
+# Never serve config, SQL, or CLI scripts over HTTP.
+RewriteRule ^(config(\.sample)?\.php|schema\.sql|src/|cron/|tools/) - [F,L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]
+
+# Some hosts strip the Authorization header before PHP sees it.
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
