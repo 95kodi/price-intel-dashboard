@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import {
   Trophy,
   AlertTriangle,
@@ -158,7 +159,7 @@ function WinnerCard({ product }: { product: MergedProduct }) {
 
   return (
     <Link
-      href={`/products/${product.ProductID}`}
+      href={productHref(product.ProductID)}
       className="group block rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
     >
       <div className="flex items-start gap-3">
@@ -201,7 +202,7 @@ function LoserCard({ product }: { product: MergedProduct }) {
         <ProductThumb product={product} />
         <div className="min-w-0 flex-1">
           <Link
-            href={`/products/${product.ProductID}`}
+            href={productHref(product.ProductID)}
             className="text-[13px] font-medium text-ink truncate block hover:text-primary transition-colors"
             title={product.ItemName}
           >
@@ -226,7 +227,7 @@ function LoserCard({ product }: { product: MergedProduct }) {
           Lowest on{" "}
           <span className="font-medium text-ink">{product.lowestPlatform ?? "—"}</span>
         </div>
-        <Link href={`/products/${product.ProductID}`} className="shrink-0">
+        <Link href={productHref(product.ProductID)} className="shrink-0">
           <Button variant="primary" size="sm">
             Update price
             <ArrowUpRight size={13} />

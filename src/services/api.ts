@@ -1,7 +1,7 @@
 import type { Product, PriceComparison, PriceComparisonResponse, MergedProduct, DashboardSummary, ProductWithPrices, Competitor, Notification, CompetitorCoverage } from "@/types";
 import { getProducts } from "./productService";
 
-const API_BASE = "https://api.gogizmo.co";
+import { API_BASE } from "./api-client";
 
 // The catalog endpoint is paginated; getProducts() walks every page for us.
 async function fetchProductsAPI(): Promise<Product[]> {

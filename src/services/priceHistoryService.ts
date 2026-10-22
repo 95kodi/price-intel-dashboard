@@ -1,3 +1,5 @@
+import { API_BASE } from "./api-client";
+
 export interface PriceHistoryEntry {
   PriceID: number;
   Price: number;
@@ -21,7 +23,7 @@ export interface PriceHistoryResponse {
 
 export async function getPriceHistory(productId: number): Promise<PriceHistoryResponse> {
   const response = await fetch(
-    `https://api.gogizmo.co/price-history/product/${productId}`
+    `${API_BASE}/price-history/product/${productId}`
   );
   if (!response.ok) throw new Error("Failed to fetch price history");
   return response.json();

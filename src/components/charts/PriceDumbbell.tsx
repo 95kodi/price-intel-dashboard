@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import { useDashboardFilters } from "@/components/dashboard/DashboardFilters";
 import { SERIES_OURS, SERIES_MARKET, rupees, rupeesShort } from "@/lib/viz";
 import { ChartCard, NoData } from "./ChartCard";
@@ -99,7 +100,7 @@ export function PriceDumbbell() {
                 const width = Math.abs(ourX - mktX);
                 return (
                   <li key={r.id}>
-                    <Link href={`/products/${r.id}`} className="group block">
+                    <Link href={productHref(r.id)} className="group block">
                       <div className="flex items-baseline justify-between gap-2 mb-1">
                         <span
                           className="text-[12px] text-ink truncate group-hover:text-primary transition-colors"

@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
+import { productHref } from "@/lib/utils";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { useDashboardFilters } from "@/components/dashboard/DashboardFilters";
 import { computeMetrics } from "@/lib/metrics";
@@ -53,7 +54,7 @@ export function BiggestGapsList() {
               {rows.map((r) => (
                 <li key={r.product.ProductID}>
                   <Link
-                    href={`/products/${r.product.ProductID}`}
+                    href={productHref(r.product.ProductID)}
                     className="group flex items-center gap-3 px-2 py-2.5 -mx-2 rounded-xl hover:bg-indigo-50/40 transition-colors"
                   >
                     <div className="min-w-0 flex-1">

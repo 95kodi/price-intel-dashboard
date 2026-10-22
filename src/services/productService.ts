@@ -1,3 +1,5 @@
+import { API_BASE } from "./api-client";
+
 export interface CatalogProduct {
   ProductID: number;
   ItemCode: string;
@@ -47,7 +49,7 @@ export async function getProductsPage(
   pageSize: number
 ): Promise<ProductsPage> {
   const response = await fetch(
-    `https://api.gogizmo.co/products/?page=${page}&page_size=${Math.min(pageSize, MAX_PAGE_SIZE)}`
+    `${API_BASE}/products/?page=${page}&page_size=${Math.min(pageSize, MAX_PAGE_SIZE)}`
   );
   if (!response.ok) {
     throw new Error("Failed to fetch products");
@@ -84,7 +86,7 @@ async function fetchAllProducts(): Promise<CatalogProduct[]> {
 }
 
 export async function getProductById(productId: number): Promise<CatalogProduct> {
-  const response = await fetch(`https://api.gogizmo.co/products/${productId}`);
+  const response = await fetch(`${API_BASE}/products/${productId}`);
   if (!response.ok) {
     if (response.status === 404) throw new Error("Product not found");
     throw new Error("Failed to load product");
@@ -97,7 +99,7 @@ export async function createProduct(product: ProductPayload): Promise<CatalogPro
 }
 
 async function saveProduct(product: ProductPayload): Promise<CatalogProduct> {
-  const response = await fetch("https://api.gogizmo.co/products/save", {
+  const response = await fetch(`${API_BASE}/products/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(product),

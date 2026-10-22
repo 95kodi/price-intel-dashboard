@@ -2,6 +2,14 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { PriceStatus } from "@/types";
 
+/**
+ * Product detail link. The dashboard is a static export (no server to render
+ * /products/123), so the id travels as a query param on one prebuilt page.
+ */
+export function productHref(productId: number | string): string {
+  return `/products/view?id=${productId}`;
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
