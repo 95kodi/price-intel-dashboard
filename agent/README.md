@@ -4,7 +4,8 @@ A standalone Windows app that runs price scans from the user's own machine.
 Marketplaces block datacenter IPs (Vercel etc.), but a home/office connection
 is a residential IP, so scraping works — same reason it works on localhost.
 
-The agent talks directly to the backend (`https://api.gogizmo.co`):
+The agent talks directly to the backend API — the PHP API on Hostinger
+(`https://yourdomain.com/api`, set `apiBase` in `agent-config.json`):
 fetch active products → fetch each product's platform URLs → scrape with the
 same scrapers as the dashboard (`../src/lib/scrapers`) → save prices with
 `Source: "Desktop Agent"`.
@@ -48,7 +49,7 @@ node dist/agent.cjs --limit 2     only scan the first N products
 
 ```json
 {
-  "apiBase": "https://api.gogizmo.co",
+  "apiBase": "https://yourdomain.com/api",
   "intervalMinutes": 60,
   "gatewayUrl": "",
   "proxyUrl": ""
@@ -56,6 +57,28 @@ node dist/agent.cjs --limit 2     only scan the first N products
 ```
 
 `intervalMinutes` only affects the CLI loop; the UI app scans on demand.
+
+## Model-list scan (GitHub Actions / CLI)
+
+`src/models-scan.ts` is the scheduled scan behind `.github/workflows/scrape-prices.yml`.
+It doesn't stop at URLs someone mapped: it covers every product the API
+imported from GoFix `GetModelList`. When a store has no URL for a model yet, it
+searches that store (`src/lib/search/`) and picks the matching listing
+(`src/lib/search/match.ts`: the right model with no Pro/Plus/Ultra mix-ups, no cases
+or refurbished units, and the cheapest variant). The API saves that URL as `auto`.
+
+```bash
+cd agent && npm ci
+API_BASE=https://yourdomain.com/api SCRAPE_TOKEN=... npm run scan:models -- --platform amazon,croma --limit 20
+```
+
+Flags: `--platform a,b` (default: all stores), `--limit N` (newest N models), `--sync`
+(import models first), `--research` (ignore recent "not found" results), `--dry-run`.
+Env: `MAX_MODEL_AGE_YEARS` (default 3; older models are only priced when a URL is
+mapped), `SEARCH_RETRY_DAYS` (3), `DELAY_MS` (1500), `SCAN_SOURCE`.
+
+Stores that block GitHub's datacenter IPs (usually Amazon, Croma and Reliance)
+can be scanned from a home or office PC with the same command.
 
 ## Notes
 

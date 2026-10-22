@@ -6,6 +6,8 @@ const BROWSER_HEADERS: Record<string, string> = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
+  // Amazon serves its 503 bot page to axios's default Accept-Encoding.
+  "Accept-Encoding": "gzip, deflate, br",
   "Sec-Ch-Ua": '"Chromium";v="131", "Google Chrome";v="131", "Not_A Brand";v="24"',
   "Sec-Ch-Ua-Mobile": "?0",
   "Sec-Ch-Ua-Platform": '"Windows"',
@@ -213,12 +215,38 @@ function ensureNotBlocked(html: string): string {
   return html;
 }
 
+// sangeetha.com product pages render the price in the browser; the page's own
+// JSON API has it. The last path segment is the product id.
+const SANGEETHA_PDP = /^https?:\/\/(?:www\.)?sangeetha\.com\/product-details\/[^?#]+\/(\d+)\/?(?:[?#].*)?$/i;
+
+async function fetchSangeethaProduct(productId: number): Promise<string> {
+  const res = await axios.post(
+    "https://www.sangeetha.com/b/customer/api/v3/product-details",
+    { type: "pwa", product_id: productId },
+    {
+      headers: {
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Origin: "https://www.sangeetha.com",
+        Referer: "https://www.sangeetha.com/",
+      },
+      timeout: 15000,
+      responseType: "text",
+    }
+  );
+  return res.data;
+}
+
 /**
  * Fetch a product page, escalating when the site blocks us:
  * plain HTTP → headless browser → configured gateway.
  * Platforms that need JS rendering skip the plain-HTTP tier.
  */
 export async function fetchProductPage(url: string, needsBrowser: boolean): Promise<string> {
+  const sangeetha = url.match(SANGEETHA_PDP);
+  if (sangeetha) return fetchSangeethaProduct(Number(sangeetha[1]));
+
   if (!needsBrowser) {
     try {
       return ensureNotBlocked(await fetchHtml(url));

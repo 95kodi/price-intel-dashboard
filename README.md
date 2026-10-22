@@ -6,10 +6,27 @@ A production-ready retail pricing intelligence dashboard built with Next.js 15 (
 
 ```bash
 npm install
+cp .env.example .env.local   # point NEXT_PUBLIC_API_URL at the PHP API
 npm run dev
 ```
 
 Open http://localhost:3000 — it redirects to `/dashboard`.
+
+## Hosting (Hostinger)
+
+Everything runs on Hostinger shared hosting. No Node.js is needed there:
+
+- **Dashboard**: a static export (`output: "export"`). `npm run build:hostinger`
+  builds it and bundles the PHP API into `hostinger/public_html/`, ready to upload.
+- **API + database**: plain PHP + MySQL in [`backend-php/`](backend-php/README.md),
+  served from `public_html/api`.
+- **Prices**: [`.github/workflows/scrape-prices.yml`](.github/workflows/scrape-prices.yml)
+  runs three times a day. It imports phones from the GoFix `GetModelList` API,
+  searches each store for every model, and posts prices to the API. Stores that block
+  GitHub's IPs can be scanned from the desktop agent instead (see [`agent/`](agent/README.md)).
+
+Product detail pages live at `/products/view/?id=123`, because a static export
+can't render `/products/123` on demand. Old links are redirected by `.htaccess`.
 
 ## Pages
 
@@ -48,13 +65,11 @@ src/
 - **Matching**: our price == lowest competitor price (blue)
 - **Losing**: our price > lowest competitor price (red)
 
-## Connecting a real backend
+## Backend
 
-All data currently flows through `src/services/api.ts`, which simulates network latency and mutates in-memory arrays seeded from `src/lib/mock-data.ts`. To connect a real PostgreSQL + scraping engine backend:
-
-1. Replace the function bodies in `services/api.ts` with `fetch()` calls to your REST endpoints (the route shapes already match the spec: `GET /api/dashboard/summary`, `GET/POST/PUT/DELETE /api/products`, `GET/POST/PUT/DELETE /api/competitors`, `GET/POST /api/product-urls`, `POST /api/scan/run`).
-2. Leave `hooks/useQueries.ts` untouched — React Query hooks call the service layer, not the mock data, so the rest of the app needs no changes.
-3. Add environment-based API base URL config as needed.
+All requests go through `src/services/*` to `API_BASE` (`src/services/api-client.ts`):
+`NEXT_PUBLIC_API_URL` at build time, otherwise `/api` (same domain, which is the Hostinger setup).
+See [`backend-php/README.md`](backend-php/README.md) for the routes.
 
 ## Tech stack
 
