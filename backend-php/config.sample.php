@@ -1,5 +1,10 @@
 <?php
-// Copy to config.php (same folder) and fill in. config.php is git-ignored.
+// Copy and fill in. The API looks for, in order:
+//   1. the path in the PRICE_INTEL_CONFIG environment variable
+//   2. price-intel-config.php in the folder that contains public_html
+//      (Hostinger: /home/<user>/domains/<domain>/price-intel-config.php) ← use this
+//   3. config.php next to this file (git-ignored; fine for local development)
+// Option 2 sits outside the web root and survives every Git deploy.
 // On Hostinger: hPanel → Databases → MySQL Databases gives the host/name/user.
 return [
     'db' => [

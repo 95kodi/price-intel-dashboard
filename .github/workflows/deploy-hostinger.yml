@@ -1,0 +1,78 @@
+# Builds the site for Hostinger (static dashboard + PHP API) and commits the
+# result to the `hostinger` branch. A normal PHP website on Hostinger pulls
+# that branch into public_html with hPanel → Advanced → Git, so nothing on
+# Hostinger (or your PC) needs Node.js.
+#
+# Optional secret HOSTINGER_DEPLOY_WEBHOOK: the "auto deployment" webhook URL
+# hPanel shows for the Git repository. When set, every build triggers a pull.
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Two builds must not push to the hostinger branch at the same time.
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Build dashboard + bundle API
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:hostinger
+
+      - name: Commit to the hostinger branch
+        env:
+          REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          # Via env, never inlined into the script: commit messages are untrusted text.
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # Keep the branch's history linear (no force-push), so the pull on
+          # Hostinger is always a plain fast-forward.
+          if git ls-remote --exit-code --heads "$REPO_URL" hostinger >/dev/null; then
+            git clone -q --depth 1 --branch hostinger "$REPO_URL" deploy
+          else
+            git init -q deploy
+            git -C deploy checkout -q -b hostinger
+            git -C deploy remote add origin "$REPO_URL"
+          fi
+          rsync -a --delete --exclude .git hostinger/public_html/ deploy/
+          cd deploy
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            exit 0
+          fi
+          subject="$(printf '%s\n' "${HEAD_MSG:-manual build}" | head -n 1)"
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Deploy ${GITHUB_SHA::7}: $subject"
+          git push -q origin hostinger
+          echo "Pushed $(git rev-parse --short HEAD) to the hostinger branch."
+
+      - name: Tell Hostinger to pull
+        env:
+          WEBHOOK: ${{ secrets.HOSTINGER_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "HOSTINGER_DEPLOY_WEBHOOK not set — click Deploy in hPanel → Git, or add the webhook."
+            exit 0
+          fi
+          curl -fsS --max-time 60 -X POST "$WEBHOOK"

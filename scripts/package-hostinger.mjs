@@ -21,4 +21,4 @@ cpSync(join(root, "backend-php"), join(target, "api"), {
 });
 
 console.log(`Ready: ${target}`);
-console.log("Upload its contents to public_html, then create public_html/api/config.php from config.sample.php.");
+console.log("Upload its contents to public_html, then create price-intel-config.php (from api/config.sample.php) in the folder above public_html.");

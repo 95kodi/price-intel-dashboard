@@ -14,10 +14,13 @@ Open http://localhost:3000 — it redirects to `/dashboard`.
 
 ## Hosting (Hostinger)
 
-Everything runs on Hostinger shared hosting. No Node.js is needed there:
+Everything runs as a normal PHP website on Hostinger. No Node.js is needed there:
 
-- **Dashboard**: a static export (`output: "export"`). `npm run build:hostinger`
-  builds it and bundles the PHP API into `hostinger/public_html/`, ready to upload.
+- **Dashboard**: a static export (`output: "export"`). On every push to `main`,
+  [`.github/workflows/deploy-hostinger.yml`](.github/workflows/deploy-hostinger.yml)
+  builds it, bundles the PHP API, and commits the result to the `hostinger` branch.
+  Hostinger's Git deployment pulls that branch into `public_html`. For a manual
+  upload instead, `npm run build:hostinger` writes the same files to `hostinger/public_html/`.
 - **API + database**: plain PHP + MySQL in [`backend-php/`](backend-php/README.md),
   served from `public_html/api`.
 - **Prices**: [`.github/workflows/scrape-prices.yml`](.github/workflows/scrape-prices.yml)

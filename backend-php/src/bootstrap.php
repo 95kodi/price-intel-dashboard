@@ -15,11 +15,22 @@ function config(): array
 {
     static $config = null;
     if ($config === null) {
-        $file = dirname(__DIR__) . '/config.php';
-        if (!is_file($file)) {
-            throw new HttpError(500, 'config.php is missing — copy config.sample.php and fill it in');
+        $candidates = [
+            getenv('PRICE_INTEL_CONFIG') ?: null,
+            // Next to public_html (…/domains/<domain>/price-intel-config.php):
+            // outside the web root, and Git deploys into public_html never touch it.
+            dirname(__DIR__, 3) . '/price-intel-config.php',
+            dirname(__DIR__) . '/config.php',
+        ];
+        foreach ($candidates as $file) {
+            if ($file && is_file($file)) {
+                $config = require $file;
+                break;
+            }
         }
-        $config = require $file;
+        if ($config === null) {
+            throw new HttpError(500, 'No config found — copy config.sample.php to price-intel-config.php next to public_html');
+        }
     }
     return $config;
 }

@@ -39,10 +39,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Import models from GetModelList
+        env:
+          API_BASE: ${{ vars.API_BASE }}
+          SCRAPE_TOKEN: ${{ secrets.SCRAPE_TOKEN }}
         run: |
-          curl -fsS --max-time 120 -X POST \
-            -H "X-Scrape-Token: ${{ secrets.SCRAPE_TOKEN }}" \
-            "${{ vars.API_BASE }}/models/sync"
+          curl -fsS --max-time 120 -X POST -H "X-Scrape-Token: $SCRAPE_TOKEN" "$API_BASE/models/sync"
 
   scrape:
     needs: sync-models
@@ -58,9 +59,12 @@ jobs:
     steps:
       - name: Skip unless selected
         id: pick
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          wanted=",${{ inputs.platforms }},"
-          if [ -z "${{ inputs.platforms }}" ] || [[ "${wanted// /}" == *",${{ matrix.platform }},"* ]]; then
+          wanted=",${PLATFORMS// /},"
+          if [ -z "$PLATFORMS" ] || [[ "$wanted" == *",$PLATFORM,"* ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -90,9 +94,13 @@ jobs:
           SCRAPER_GATEWAY_URL: ${{ secrets.SCRAPER_GATEWAY_URL }}
           SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
           SCAN_SOURCE: GitHub Actions
+          PLATFORM: ${{ matrix.platform }}
+          LIMIT: ${{ inputs.limit }}
+          RESEARCH: ${{ inputs.research }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          args="--platform ${{ matrix.platform }}"
-          [ "${{ inputs.limit }}" != "" ] && [ "${{ inputs.limit }}" != "0" ] && args="$args --limit ${{ inputs.limit }}"
-          [ "${{ inputs.research }}" = "true" ] && args="$args --research"
-          [ "${{ inputs.dry_run }}" = "true" ] && args="$args --dry-run"
-          node dist/models-scan.cjs $args
+          args=(--platform "$PLATFORM")
+          [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] && args+=(--limit "$LIMIT")
+          [ "$RESEARCH" = "true" ] && args+=(--research)
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          node dist/models-scan.cjs "${args[@]}"
