@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 const PRODUCT_COLUMNS = 'ProductID, ItemCode, Brand, ModelName, RAM, StorageSize, ColorName, VariantName,
-    ItemName, Category, SubCategory, IsActive, CreatedOn, CurrentPrice, LastUpdated';
+    ItemName, Category, SubCategory, IsActive, CreatedOn, CurrentPrice, LastUpdated, ParentProductID';
 
 function product_row(array $r): array
 {
@@ -22,18 +22,27 @@ function product_row(array $r): array
         'CreatedOn'    => iso($r['CreatedOn']),
         'CurrentPrice' => money($r['CurrentPrice']),
         'LastUpdated'  => iso($r['LastUpdated']),
+        // Set on variant rows (storage + colour of a model); null on models.
+        'ParentProductID' => int_or_null($r['ParentProductID']),
     ];
 }
 
-/** GET /products/?page=1&page_size=100 — page_size is capped at 100 like the old API. */
+/**
+ * GET /products/?page=1&page_size=1000[&models_only=1] — page_size is capped
+ * at 1000. models_only leaves out variant rows (the catalog page lists models;
+ * the dashboard needs variants too, to name them in the price comparison).
+ */
 function list_products(): array
 {
     $page = max(1, (int) ($_GET['page'] ?? 1));
-    $size = min(100, max(1, (int) ($_GET['page_size'] ?? 20)));
-    $total = (int) q('SELECT COUNT(*) FROM products')->fetchColumn();
+    // 1000, not the old API's 100: the dashboard walks every page, and each
+    // request is a DB connection, which shared hosting rations.
+    $size = min(1000, max(1, (int) ($_GET['page_size'] ?? 20)));
+    $where = bool_val($_GET['models_only'] ?? null, false) ? ' WHERE ParentProductID IS NULL' : '';
+    $total = (int) q('SELECT COUNT(*) FROM products' . $where)->fetchColumn();
 
     $rows = q(
-        'SELECT ' . PRODUCT_COLUMNS . ' FROM products ORDER BY ProductID LIMIT ' . $size . ' OFFSET ' . (($page - 1) * $size)
+        'SELECT ' . PRODUCT_COLUMNS . ' FROM products' . $where . ' ORDER BY ProductID LIMIT ' . $size . ' OFFSET ' . (($page - 1) * $size)
     )->fetchAll();
 
     return [

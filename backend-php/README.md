@@ -8,33 +8,51 @@ GitHub Actions scraper.
 ## Layout on Hostinger
 
 ```
-public_html/            ← static dashboard (Next.js export, `out/`)
-public_html/api/        ← this folder
-public_html/api/config.php   ← created on the server, never committed
+domains/<domain>/price-intel-config.php   ← DB password + token; outside the web root
+domains/<domain>/public_html/             ← static dashboard (Next.js export)
+domains/<domain>/public_html/api/         ← this folder
 ```
 
 The dashboard calls `/api/...` on its own domain, so no CORS setup is needed.
+It's a normal **PHP website**, not a Hostinger "Node.js app" (those can't serve
+a Next.js static export and don't run PHP).
 
-## Deploy
+## Deploy with Git (recommended)
+
+GitHub Actions (`.github/workflows/deploy-hostinger.yml`) builds the site on
+every push to `main` and commits the finished files to the **`hostinger`**
+branch. Hostinger pulls that branch, so neither Hostinger nor your PC needs Node.js.
 
 1. **Database**: hPanel → Databases → MySQL Databases → create a database and user.
-   Open phpMyAdmin, select the database, and import `schema.sql`.
-2. **Build the upload bundle** (on your PC):
-   ```bash
-   npm install
-   npm run build:hostinger
-   ```
-   This writes `hostinger/public_html/` with the dashboard plus `api/`.
-3. **Upload**: hPanel → File Manager → `public_html` → upload the *contents* of
-   `hostinger/public_html/`, including the hidden `.htaccess` files. You can also zip the
-   folder, upload the zip, and extract it in File Manager.
-4. **Config**: copy `api/config.sample.php` to `api/config.php` and fill in the
-   DB credentials and a long random `scrape_token`.
-5. **Check**: open `https://yourdomain.com/api/health`. It should return `{"success":true,"db":"ok",...}`.
-6. **Import phones**: either wait for the first GitHub Actions run, or run it now:
+   In phpMyAdmin, select it and import `schema.sql`.
+2. **First build**: merge the pull request into `main`. The build runs by
+   itself and a `hostinger` branch appears. Later you can re-run it any time
+   from Actions → *Deploy to Hostinger* → Run workflow.
+3. **Empty `public_html`**: hPanel → File Manager → delete Hostinger's default
+   `default.php` / `index.php`. Git deploy needs an empty folder.
+4. **Connect Git**: hPanel → Advanced → **Git** → repository
+   `https://github.com/95kodi/price-intel-dashboard.git`, branch **`hostinger`**,
+   install path empty (that means `public_html`) → Create → **Deploy**.
+   - If the repo is private, use the SSH URL (`git@github.com:95kodi/price-intel-dashboard.git`)
+     and add the SSH key hPanel shows under GitHub → repo → Settings → Deploy keys.
+5. **Auto-deploy**: in the same Git screen, enable auto deployment and copy the
+   webhook URL into the GitHub secret `HOSTINGER_DEPLOY_WEBHOOK`. Every build
+   then triggers a pull. Without it, click **Deploy** in hPanel after a build.
+6. **Config**: File Manager → go one level *above* `public_html` (the
+   `domains/<domain>/` folder) → upload `config.sample.php` as
+   **`price-intel-config.php`** and fill in the DB credentials and a long
+   random `scrape_token`. Deploys never touch it, and it isn't reachable from the web.
+7. **Check**: `https://yourdomain.com/api/health` should return `{"success":true,"db":"ok",...}`.
+8. **Import phones**: wait for the first scheduled scrape, or run it now:
    ```bash
    curl -X POST -H "X-Scrape-Token: <scrape_token>" https://yourdomain.com/api/models/sync
    ```
+
+## Deploy by upload (no Git)
+
+`npm run build:hostinger` on your PC writes `hostinger/public_html/` (dashboard
++ `api/`). Zip its *contents*, including the hidden `.htaccess` files, upload
+the zip to `public_html` and extract it. Then do steps 1, 6, 7 and 8 above.
 
 ### Bringing over data from the old backend (optional, do this before step 6)
 
@@ -80,6 +98,28 @@ refuses to run once models have been synced, because old IDs would collide with 
 - The latest price is always stored on the listing. A `price_history` row is only added when
   the price or MRP changes, or once per day, so frequent scans don't flood the table.
 
+## Variants (storage + colour)
+
+With `--variants` (on in the scheduled workflow), the scraper records every
+storage + colour a store lists for a model, e.g. *iPhone 16 Pro 256GB Natural
+Titanium*. Each variant is a row in `products` with `ParentProductID` set to
+its model, `StorageSize` / `ColorName` (and `RAM` when a store states it), and
+`SubCategory = 'Variant'`. All routes treat it as a product, so the dashboard
+shows variant prices per store with no extra screens. The model row keeps the
+cheapest listing (its base variant).
+
+A store search shows about 20 listings, so a model's bigger storages often
+miss the cut (Amazon doesn't show the 1TB iPhone 17 Pro for "iPhone 17 Pro").
+`/scrape/jobs` therefore sends each model's known storage + colour
+combinations, and the scraper searches again by storage ("iPhone 17 Pro 1TB")
+for any combination the store's results didn't include. That's at most 4 extra
+searches per model and store.
+
+Stores name the same variant consistently enough to merge on storage +
+colour words (`VariantKey`, e.g. `256gb|natural titanium`). RAM isn't part of
+the key because Flipkart leaves it out of titles. On budget phones sold as
+4/128 and 6/128 in one colour, the cheaper of the two is kept.
+
 ## Model sync
 
 `POST /models/sync` (or the cron script `cron/sync-models.php`) reads
@@ -87,7 +127,9 @@ refuses to run once models have been synced, because old IDs would collide with 
 `deviceId` filter, so the sync filters by `device_ids` itself. Models are
 keyed on `ExternalModelID`. A re-sync updates brand, model name and launch date,
 but keeps your edits to `ItemName`, `IsActive` and `CurrentPrice`. Model names
-repeated under two GoFix ids are imported once.
+repeated under two GoFix ids are imported once. With `import_new_models`
+off (the default), the sync only refreshes models already in the catalogue
+(the chosen 317 phones from wb_models) and adds nothing new.
 
 ## Security notes
 

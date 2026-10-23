@@ -32,6 +32,37 @@ function get_product_urls(int $productId): array
 }
 
 /**
+ * GET /product-platform-url/all — every active product that has active URLs,
+ * with those URLs, in one response. The desktop agent used to fetch this as
+ * two requests per product; on shared hosting that burst (~1,600 requests)
+ * trips the per-account database connection limit.
+ */
+function get_all_product_urls(): array
+{
+    $rows = q(
+        'SELECT p.ProductID, p.ItemName, pp.ProductPlatformID, pp.PlatformID, pl.PlatformName, pp.ProductURL
+           FROM products p
+           JOIN product_platforms pp ON pp.ProductID = p.ProductID AND pp.IsActive = 1
+           JOIN platforms pl ON pl.PlatformID = pp.PlatformID AND pl.IsEnabled = 1
+          WHERE p.IsActive = 1
+          ORDER BY p.ProductID, pl.PlatformID'
+    )->fetchAll();
+
+    $out = [];
+    foreach ($rows as $r) {
+        $id = (int) $r['ProductID'];
+        $out[$id] ??= ['ProductID' => $id, 'ItemName' => $r['ItemName'], 'Platforms' => []];
+        $out[$id]['Platforms'][] = [
+            'ProductPlatformID' => (int) $r['ProductPlatformID'],
+            'PlatformID'        => (int) $r['PlatformID'],
+            'PlatformName'      => $r['PlatformName'],
+            'ProductURL'        => $r['ProductURL'],
+        ];
+    }
+    return ['success' => true, 'count' => count($out), 'data' => array_values($out)];
+}
+
+/**
  * Saves a URL typed in the dashboard. It becomes 'manual', which the scraper's
  * auto-search never overwrites. Returns the ProductPlatformID.
  */

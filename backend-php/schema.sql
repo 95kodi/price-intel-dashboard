@@ -37,8 +37,17 @@ CREATE TABLE IF NOT EXISTS products (
   CurrentPrice    DECIMAL(12,2) NULL,
   LastUpdated     DATETIME NULL,
   CreatedOn       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- Variants (storage + colour, e.g. "iPhone 15 Pro 256GB Blue Titanium") are
+  -- products too, pointing at their model, so every dashboard view and price
+  -- route works for them unchanged. NULL on model rows.
+  ParentProductID INT NULL,
+  -- "256gb|blue titanium": storage + colour words sorted, so stores that
+  -- write "Titanium Blue" land on the same variant.
+  VariantKey      VARCHAR(120) NULL,
   UNIQUE KEY uq_external_model (ExternalModelID),
-  KEY ix_active (IsActive)
+  UNIQUE KEY uq_variant (ParentProductID, VariantKey),
+  KEY ix_active (IsActive),
+  CONSTRAINT fk_variant_parent FOREIGN KEY (ParentProductID) REFERENCES products(ProductID) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS product_platforms (

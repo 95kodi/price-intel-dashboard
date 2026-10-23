@@ -67,7 +67,7 @@ function run_model_sync(array $deviceIds): array
     ksort($models);
 
     $seen = [];
-    $stats = ['fetched' => count($models), 'inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'duplicates' => 0];
+    $stats = ['fetched' => count($models), 'inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'duplicates' => 0, 'not_in_catalogue' => 0];
 
     // Compare against what's stored and only write differences. (INSERT ...
     // ON DUPLICATE KEY UPDATE would burn an AUTO_INCREMENT id per existing
@@ -76,6 +76,9 @@ function run_model_sync(array $deviceIds): array
     foreach (q('SELECT ExternalModelID, Brand, ModelName, Category, LaunchDate FROM products WHERE ExternalModelID IS NOT NULL')->fetchAll() as $r) {
         $existing[(int) $r['ExternalModelID']] = $r;
     }
+    // Off by default: the catalogue is a chosen list of models (the 317 phones
+    // from wb_models), so the sync only refreshes those and never adds more.
+    $importNew = !empty(config()['model_api']['import_new_models']);
     $insert = db()->prepare(
         'INSERT INTO products (ExternalModelID, ItemCode, Brand, ModelName, ItemName, Category, LaunchDate)
          VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -103,6 +106,10 @@ function run_model_sync(array $deviceIds): array
             $old = $existing[$id] ?? null;
 
             if ($old === null) {
+                if (!$importNew) {
+                    $stats['not_in_catalogue']++;
+                    continue;
+                }
                 $insert->execute([$id, 'GF-' . $id, $brand, $name, $name, $category, $launch]);
                 $stats['inserted']++;
             } elseif ([$old['Brand'], $old['ModelName'], $old['Category'], $old['LaunchDate']] !== [$brand, $name, $category, $launch]) {

@@ -5,7 +5,7 @@ Marketplaces block datacenter IPs (Vercel etc.), but a home/office connection
 is a residential IP, so scraping works — same reason it works on localhost.
 
 The agent talks directly to the backend API — the PHP API on Hostinger
-(`https://yourdomain.com/api`, set `apiBase` in `agent-config.json`):
+(`https://smartphonescrape.dotsmart.in/api` by default; `agent-config.json` can override it):
 fetch active products → fetch each product's platform URLs → scrape with the
 same scrapers as the dashboard (`../src/lib/scrapers`) → save prices with
 `Source: "Desktop Agent"`.
@@ -49,7 +49,7 @@ node dist/agent.cjs --limit 2     only scan the first N products
 
 ```json
 {
-  "apiBase": "https://yourdomain.com/api",
+  "apiBase": "https://smartphonescrape.dotsmart.in/api",
   "intervalMinutes": 60,
   "gatewayUrl": "",
   "proxyUrl": ""
@@ -73,7 +73,11 @@ API_BASE=https://yourdomain.com/api SCRAPE_TOKEN=... npm run scan:models -- --pl
 ```
 
 Flags: `--platform a,b` (default: all stores), `--limit N` (newest N models), `--sync`
-(import models first), `--research` (ignore recent "not found" results), `--dry-run`.
+(import models first), `--research` (ignore recent "not found" results), `--dry-run`,
+`--products 12,34` (only these ProductIDs), `--variants` (also price every storage +
+colour each store lists; parsed from titles by `src/lib/search/variant.ts`. A storage +
+colour that another store lists but this store's results don't include gets a
+"<model> <storage>" search, up to 4 per model).
 Env: `MAX_MODEL_AGE_YEARS` (default 3; older models are only priced when a URL is
 mapped), `SEARCH_RETRY_DAYS` (3), `DELAY_MS` (1500), `SCAN_SOURCE`.
 

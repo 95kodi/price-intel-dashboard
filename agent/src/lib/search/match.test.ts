@@ -63,6 +63,43 @@ no("OnePlus 15", "Oneplus", "Apple iPhone 15 (Black, 128 GB)");
 no("OnePlus 15", "Oneplus", 'HP - AMD Ryzen 7-7730U 15.6" (39.6 cm) 15-fc0088AU Thin & Light Laptop (8GB DDR4/ 512GB SSD)');
 yes("OnePlus 15", "Oneplus", "Oneplus 15 5G (Sand Storm, 12GB, 256GB)");
 yes("Samsung Galaxy S26 Ultra", "Samsung", "Galaxy S26 Ultra 5G (Titanium Black, 12GB, 256GB)");
+
+// Junk seen live in the full scan: accessories named late in the title,
+// other products sharing the name, unbranded lookalikes, deep stray numbers.
+no("Moto E13", "Motorola", "Silicone Motorola Moto E13, [Bumper] Exclusive - Transparent Back Cover Clear Thin");
+no("Samsung Galaxy M54 5G", "Samsung", "CEDO Samsung Galaxy M54 / F54 (5G) Bumper Case | Soft Jel Flexible Thin");
+no("Realme P3x 5G", "Realme", "REALME P3X 5G - REALME - CASETiFY 2025 - SILICON");
+no("iPhone 7", "Apple", "iPhone 7 - APPLE - GLITTER - BACK CASE - LIQUID CASE");
+no("Realme C25Y", "Realme", "Realme C25Y Back Panel Replacement, Rear Housing Cover with Camera & Fingerprint Cutouts");
+no("Samsung Galaxy Z Flip 6", "Samsung", "Samsung Galaxy Z Flip6 Anti-Reflection Film");
+no("OnePlus Nord 3", "Oneplus", "Oneplus Nord Buds 3 True Wireless ( Chromatic Blue )");
+no("Redmi 6", "Redmi", "Redmi Buds 6 True Wireless ( Spectre Black )");
+no("Redmi 5", "Redmi", "Redmi Watch 5 Active Smartwatch, Black");
+no("iQOO Neo 7", "IQOO", "Bajaj DX 7 Neo 1000W Dry Iron");
+no("Nokia 1", "Nokia", "Nokia 6310 Dual SIM Keypad Phone with a 2.8? Screen, Wireless FM Radio and Rear Camera with Flash | 1 Year Replacement");
+no("Poco X4 GT", "Poco", "Das Praxisbuch Xiaomi Poco X4 GT - Anleitung für Einsteiger (German Edition)");
+// …while real phones with risky words or no brand word still match.
+yes("Tecno Spark 10", "Tecno", "Tecno Spark 10 (Magic Skin Orange, 128 GB)");
+yes("Nothing Phone 3a", "Nothing", "Nothing Phone (3a) 5G (Black, 8GB RAM, 128GB Storage)");
+yes("iQOO Neo 7", "IQOO", "iQOO Neo 7 5G (Frost Blue, 8GB RAM, 128GB Storage)");
+yes("Pixel 10", "Google", "Pixel 10 5G (Obsidian, 12GB RAM, 256GB)");
+yes("Moto G85", "Motorola", "Moto G85 5G (Olive Green, 8GB RAM, 128GB Storage)");
+yes("Redmi Go", "Redmi", "REDMI Go (Blue, 8 GB)");
+yes("Xiaomi 15", "Xiaomi", "Xiaomi15 (Black, 512 GB)");
+yes("Oppo Reno 10 Pro 5G", "Oppo", "Reno10 Pro 5G Smartphone (Silvery Grey, 12GB RAM, 256GB Storage)");
+// Cross-brand and other-category matches the old matcher accepted.
+no("OnePlus 15R", "Oneplus", "iQOO 15R (Triumph Silver 2026, 8GB RAM, 256GB Storage)");
+no("Oppo A36", "Oppo", "Samsung Galaxy A36 5G (Dark Blue, 8GB RAM, 128GB Storage)");
+no("Pixel 4", "Google", "Google Pixel Watch 4 41 mm Smart Watch with Matte Black Active Band");
+no("OnePlus 3", "Oneplus", "OnePlus Pad 3 33.52 cm (13.2 inch) 12 GB RAM, 256 GB, Frosted Silver, Wi-Fi Tablet");
+no("Micromax In 1", "Micromax", "LG 1.42 Ton 3 Star AI Convertible 6 in 1 Inverter Split AC");
+no("Tecno Pova 2", "Tecno", "Tecno Pova Curve 2 5G (Melting Silver, 8GB RAM, 256GB Storage)");
+yes("Lava Blaze Curve 5G", "Lava", "LAVA Blaze Curve 5G (Glass Iron, 256 GB)");
+{
+  // A case that passes every word filter still loses to the price floor.
+  const hits = [hit("Vivo Y58 5G (Himalayan Blue)", 299)];
+  assert.strictEqual(pickBestHit("Vivo Y58", "Vivo", hits), null, "₹299 is not a phone");
+}
 no("OnePlus Nord 6", "OnePlus", "OnePlus Nord CE 6 5G (8GB RAM, 128GB)");
 no("OnePlus Nord 6", "OnePlus", "OnePlus Nord CE6 5G (8GB RAM, 128GB)");
 
@@ -97,6 +134,13 @@ yes("Samsung Galaxy Z Fold 7", "Samsung", "Samsung Galaxy Z Fold7 5G (Blue Shado
 yes("Samsung Galaxy Z Fold7", "Samsung", "Samsung Galaxy Z Fold 7 5G (Blue Shadow, 12GB RAM, 256GB)");
 no("Samsung Galaxy Z Fold7", "Samsung", "Samsung Galaxy Z Flip7 5G (Blue Shadow, 12GB RAM, 256GB)");
 no("Samsung Galaxy Z Fold 7", "Samsung", "Samsung Galaxy Z Fold7 FE 5G (Black, 12GB RAM, 256GB)");
+
+// Phone sold with its charger: the charger note isn't an accessory, "5G+" isn't a Plus model
+yes("Infinix Note 50x", "Infinix", "Infinix Note 50x 5G+ 45W Charger In the Box & AI (Sea Breeze Green, 128 GB)");
+yes("Oppo K14x 5G", "Oppo", "OPPO K14x 5G 6500mAh and 45W SUPERVOOC Charger & AI (Prism Violet, 128 GB)");
+no("Infinix Note 50x", "Infinix", "45W Charger for Infinix Note 50x 5G (Type C, White)");
+no("Infinix Note 50x", "Infinix", "Infinix Note 50x Pro 5G+ 45W Charger In the Box (Grey, 128 GB)");
+no("Redmi Note 14 Pro 5G", "Redmi", "Redmi Note 14 Pro+ 5G (Spectre Blue, 256 GB)");
 
 // pickBestHit: lowest price among matches, in-stock first, store order on ties
 {

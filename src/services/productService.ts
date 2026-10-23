@@ -16,6 +16,8 @@ export interface CatalogProduct {
   CreatedOn: string;
   CurrentPrice: number | null;
   LastUpdated: string | null;
+  /** Set on variant rows (a model's storage + colour); null on models. */
+  ParentProductID?: number | null;
 }
 
 export interface ProductPayload {
@@ -41,15 +43,19 @@ export interface ProductsPage {
   data: CatalogProduct[];
 }
 
-// The API caps page_size at 100, and supports no search/filter params.
-const MAX_PAGE_SIZE = 100;
+// The API caps page_size at 1000 and supports no search params. Big pages
+// matter on Hostinger: each request opens a DB connection, and the account's
+// connection budget is small.
+const MAX_PAGE_SIZE = 1000;
 
+/** modelsOnly leaves out variant rows, for the catalog page. */
 export async function getProductsPage(
   page: number,
-  pageSize: number
+  pageSize: number,
+  modelsOnly = false
 ): Promise<ProductsPage> {
   const response = await fetch(
-    `${API_BASE}/products/?page=${page}&page_size=${Math.min(pageSize, MAX_PAGE_SIZE)}`
+    `${API_BASE}/products/?page=${page}&page_size=${Math.min(pageSize, MAX_PAGE_SIZE)}${modelsOnly ? "&models_only=1" : ""}`
   );
   if (!response.ok) {
     throw new Error("Failed to fetch products");
