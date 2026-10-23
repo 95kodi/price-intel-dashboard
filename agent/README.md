@@ -73,7 +73,11 @@ API_BASE=https://yourdomain.com/api SCRAPE_TOKEN=... npm run scan:models -- --pl
 ```
 
 Flags: `--platform a,b` (default: all stores), `--limit N` (newest N models), `--sync`
-(import models first), `--research` (ignore recent "not found" results), `--dry-run`.
+(import models first), `--research` (ignore recent "not found" results), `--dry-run`,
+`--products 12,34` (only these ProductIDs), `--variants` (also price every storage +
+colour each store lists; parsed from titles by `src/lib/search/variant.ts`. A storage +
+colour that another store lists but this store's results don't include gets a
+"<model> <storage>" search, up to 4 per model).
 Env: `MAX_MODEL_AGE_YEARS` (default 3; older models are only priced when a URL is
 mapped), `SEARCH_RETRY_DAYS` (3), `DELAY_MS` (1500), `SCAN_SOURCE`.
 

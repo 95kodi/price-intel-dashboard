@@ -85,75 +85,52 @@ async function getJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** One row of /price-comparison/ — a product plus its per-platform URLs. */
-interface ComparisonRow {
-  ProductID: number;
-  ItemName: string;
-  [field: string]: unknown;
-}
-
 /**
- * ProductIDs that already have at least one competitor URL mapped, according
- * to the backend's price-comparison view. This replaces probing every product
- * in the catalog: the catalog holds thousands of rows but only a handful have
- * URLs, and price-comparison already knows which ones.
+ * Every active product with its mapped URLs, in one request. Shared hosting
+ * (Hostinger) caps database connections per account, and the old discovery
+ * (price-comparison, then two requests per product with 8 in flight) made
+ * ~1,600 requests in a burst and got HTTP 500s back.
  */
-async function getMappedProductIds(apiBase: string): Promise<number[]> {
-  const res = await getJson<{ data?: ComparisonRow[] | null }>(
-    `${apiBase}/price-comparison/`
-  );
+async function getScannableProducts(
+  apiBase: string
+): Promise<{ product: Product; platforms: PlatformUrlItem[] }[]> {
+  const res = await getJson<{
+    data?: { ProductID: number; ItemName: string; Platforms?: PlatformUrlItem[] | null }[] | null;
+  }>(`${apiBase}/product-platform-url/all`);
   return (res.data ?? [])
-    .filter((row) =>
-      Object.entries(row).some(
-        ([key, value]) => key.endsWith("URL") && typeof value === "string" && value
-      )
-    )
-    .map((row) => row.ProductID);
+    .map((row) => ({
+      product: { ProductID: row.ProductID, ItemName: row.ItemName, IsActive: true },
+      platforms: (row.Platforms ?? []).filter((p) => p.ProductURL),
+    }))
+    .filter((row) => row.platforms.length > 0);
 }
 
-async function savePrice(
-  apiBase: string,
-  productPlatformId: number,
-  price: number,
-  mrp: number | null,
-  discount: number | null
-): Promise<boolean> {
-  const res = await fetch(`${apiBase}/platform-price-history/save`, {
+interface PendingPrice {
+  ProductPlatformID: number;
+  Price: number;
+  MRP: number;
+  Discount: number;
+  product: string;
+  platform: string;
+}
+
+/** Saves up to 200 prices in one request (one DB connection on the server). */
+async function savePrices(apiBase: string, prices: PendingPrice[]): Promise<void> {
+  const res = await fetch(`${apiBase}/platform-price-history/save-batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      PriceID: 0,
-      ProductPlatformID: productPlatformId,
-      Price: price,
-      MRP: mrp ?? price,
-      Discount: discount ?? 0,
       Source: "Desktop Agent",
-      IsActive: 1,
+      Prices: prices.map(({ ProductPlatformID, Price, MRP, Discount }) => ({ ProductPlatformID, Price, MRP, Discount })),
     }),
   });
-  return res.ok;
+  if (!res.ok) throw new Error(`Saving ${prices.length} prices failed: HTTP ${res.status}`);
 }
+
+// Flush saved prices every N results, so a crash or Stop loses little.
+const SAVE_BATCH = 25;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Runs `worker` over `items` with at most `concurrency` in flight. */
-async function mapConcurrent<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (next < items.length) {
-        const i = next++;
-        results[i] = await worker(items[i]);
-      }
-    })
-  );
-  return results;
-}
 
 export async function runScan(
   config: AgentConfig,
@@ -169,44 +146,30 @@ export async function runScan(
 
   const totals: ScanTotals = { scanned: 0, succeeded: 0, failed: 0, failures: [] };
 
-  // Discovery: price-comparison tells us up front which products have URLs
-  // mapped, so we only look up those instead of probing the whole catalog.
-  const mappedIds = await getMappedProductIds(config.apiBase);
-
-  let checked = 0;
-  const discovered = await mapConcurrent(mappedIds, 8, async (productId) => {
-    if (isCancelled()) return null;
-    try {
-      const [urls, product] = await Promise.all([
-        getJson<{ ItemName?: string; Platforms?: PlatformUrlItem[] | null }>(
-          `${config.apiBase}/product-platform-url/product/${productId}`
-        ),
-        getJson<Product>(`${config.apiBase}/products/${productId}`),
-      ]);
-      if (!product.IsActive) return null;
-
-      const platforms = (urls.Platforms ?? []).filter((p) => p.ProductURL);
-      return platforms.length > 0 ? { product, platforms } : null;
-    } catch (err) {
-      totals.failed++;
-      const failure = {
-        product: `Product ${productId}`,
-        platform: "—",
-        error: (err as Error).message,
-      };
-      totals.failures.push(failure);
-      cb.onResult?.({ ...failure, ok: false });
-      return null;
-    } finally {
-      cb.onDiscovery?.(++checked, mappedIds.length);
-    }
-  });
-
-  let scannable = discovered.filter(
-    (d): d is { product: Product; platforms: PlatformUrlItem[] } => d !== null
-  );
+  // Discovery: one request returns every active product with mapped URLs.
+  let scannable = await getScannableProducts(config.apiBase);
+  cb.onDiscovery?.(scannable.length, scannable.length);
   if (opts.limit && opts.limit > 0) scannable = scannable.slice(0, opts.limit);
   cb.onStart?.(scannable.length);
+
+  // Prices go to the API in batches; a failed batch turns its results into failures.
+  let pending: PendingPrice[] = [];
+  const flush = async () => {
+    if (pending.length === 0) return;
+    const batch = pending;
+    pending = [];
+    try {
+      await savePrices(config.apiBase, batch);
+    } catch (err) {
+      for (const p of batch) {
+        totals.succeeded--;
+        totals.failed++;
+        const failure = { product: p.product, platform: p.platform, error: (err as Error).message };
+        totals.failures.push(failure);
+        cb.onResult?.({ ...failure, ok: false });
+      }
+    }
+  };
 
   for (const [i, { product, platforms }] of scannable.entries()) {
     if (isCancelled()) break;
@@ -229,14 +192,14 @@ export async function runScan(
         }
 
         if (!opts.dryRun) {
-          const saved = await savePrice(
-            config.apiBase,
-            p.ProductPlatformID,
-            result.price,
-            result.mrp,
-            result.discount
-          );
-          if (!saved) throw new Error("Backend rejected the price save");
+          pending.push({
+            ProductPlatformID: p.ProductPlatformID,
+            Price: result.price,
+            MRP: result.mrp ?? result.price,
+            Discount: result.discount ?? 0,
+            product: product.ItemName,
+            platform: p.PlatformName,
+          });
         }
         totals.succeeded++;
         cb.onResult?.({
@@ -256,10 +219,13 @@ export async function runScan(
         cb.onResult?.({ ...failure, ok: false });
       }
 
+      if (pending.length >= SAVE_BATCH) await flush();
       // Small pause between requests so we don't hammer the sites.
       await sleep(1500);
     }
   }
 
+  // Also runs after Stop, so prices already scraped are kept.
+  await flush();
   return totals;
 }

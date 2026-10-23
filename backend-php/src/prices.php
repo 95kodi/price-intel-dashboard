@@ -57,6 +57,43 @@ function save_price(): array
 }
 
 /**
+ * POST /platform-price-history/save-batch
+ *   {"Source": "Desktop Agent", "Prices": [{ProductPlatformID, Price, MRP?, Discount?}, ...]}
+ * Up to 200 prices on one database connection, so a full agent scan doesn't
+ * open a connection per price (shared hosting caps connections per account).
+ */
+function save_price_batch(): array
+{
+    $b = read_json();
+    $prices = $b['Prices'] ?? null;
+    if (!is_array($prices)) throw new HttpError(422, 'Prices must be an array');
+    if (count($prices) > 200) throw new HttpError(413, 'Send at most 200 prices per request');
+    $source = str_val($b['Source'] ?? 'Desktop Agent', 64) ?: 'Desktop Agent';
+
+    $known = q('SELECT ProductPlatformID FROM product_platforms')->fetchAll(PDO::FETCH_COLUMN);
+    $known = array_flip(array_map('intval', $known));
+    $saved = 0;
+    $errors = [];
+    foreach ($prices as $i => $p) {
+        $ppId = (int) ($p['ProductPlatformID'] ?? 0);
+        $price = num_or_null($p['Price'] ?? null);
+        if (!isset($known[$ppId]) || $price === null) {
+            if (count($errors) < 20) $errors[] = "#$i: " . (isset($known[$ppId]) ? 'Price must be positive' : 'unknown ProductPlatformID');
+            continue;
+        }
+        record_price(
+            $ppId,
+            $price,
+            num_or_null($p['MRP'] ?? null),
+            isset($p['Discount']) && $p['Discount'] !== null ? (float) $p['Discount'] : null,
+            $source
+        );
+        $saved++;
+    }
+    return ['success' => true, 'saved' => $saved, 'skipped' => count($prices) - $saved, 'errors' => $errors];
+}
+
+/**
  * GET /price-comparison/ — one row per active product with at least one
  * active URL, and <ColumnKey>Price / <ColumnKey>URL for every platform.
  */

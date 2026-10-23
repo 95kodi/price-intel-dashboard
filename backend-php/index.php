@@ -42,6 +42,7 @@ $routes = [
     ['POST', '#^/platforms/save$#',                       'save_platform'],
     ['GET',  '#^/platforms/(\d+)$#',                      'get_platform'],
 
+    ['GET',  '#^/product-platform-url/all$#',             'get_all_product_urls'],
     ['GET',  '#^/product-platform-url/product/(\d+)$#',   'get_product_urls'],
     ['POST', '#^/product-platform-url/save$#',            'save_product_url'],
     ['POST', '#^/urlmap/update-url$#',                    'update_url'],
@@ -49,6 +50,7 @@ $routes = [
     ['GET',  '#^/price-comparison$#',                     'price_comparison'],
     ['GET',  '#^/platform-price-history/product/(\d+)$#', 'latest_prices_for_product'],
     ['POST', '#^/platform-price-history/save$#',          'save_price'],
+    ['POST', '#^/platform-price-history/save-batch$#',    'save_price_batch'],
     ['GET',  '#^/price-history/product/(\d+)$#',          'price_history_for_product'],
 
     ['POST', '#^/models/sync$#',                          'sync_models'],

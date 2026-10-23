@@ -11,7 +11,7 @@
  *
  * Usage:
  *   models-scan.cjs [--platform flipkart,poorvika] [--limit 50] [--dry-run]
- *                   [--sync] [--research]
+ *                   [--sync] [--research] [--products 12,34] [--variants]
  *
  * Env:
  *   API_BASE              https://yourdomain.com/api   (required)
@@ -26,8 +26,9 @@ import * as fs from "fs";
 import { fetchProductPage, BlockedError } from "./lib/http";
 import { getParser } from "./lib/scrapers";
 import { getSearcher, searchQueries } from "./lib/search";
-import { pickBestHit } from "./lib/search/match";
+import { matchingHits, pickBestHit } from "./lib/search/match";
 import type { SearchHit } from "./lib/search/types";
+import { parseVariant, variantKey, type VariantInfo } from "./lib/search/variant";
 
 interface JobLink {
   ProductPlatformID: number;
@@ -46,6 +47,8 @@ interface JobProduct {
   LaunchDate: string | null;
   links: JobLink[];
   misses: { PlatformID: number; SearchedAt: string }[];
+  /** Storage + colour combinations any store has listed for this model. */
+  variants?: { Storage: string; Color: string }[];
 }
 
 interface JobPlatform {
@@ -69,6 +72,8 @@ type Result =
       Price: number;
       MRP: number | null;
       Discount: number | null;
+      /** Set for a variant listing; the API files it under that variant of ProductID. */
+      Variant?: { RAM: string | null; Storage: string; Color: string };
     }
   | { ProductID: number; PlatformID: number; miss: true; reason: string };
 
@@ -80,6 +85,7 @@ interface PlatformStats {
   failed: number;
   blocked: number;
   skippedOld: number;
+  variants: number;
   aborted: string | null;
 }
 
@@ -98,6 +104,9 @@ const DELAY_MS = Number(process.env.DELAY_MS ?? 1500);
 const SOURCE = process.env.SCAN_SOURCE || "GitHub Actions";
 const DRY_RUN = flag("dry-run");
 const RESEARCH = flag("research");
+// Also record every storage + colour variant each store lists, priced from
+// the search results (no product-page fetch per variant).
+const VARIANTS = flag("variants");
 const LIMIT = Number(option("limit") ?? 0);
 // Product pages that are client-rendered and need a real browser (same as
 // scan.ts). Others start with plain HTTP and only escalate when blocked.
@@ -105,6 +114,8 @@ const PAGE_NEEDS_BROWSER = new Set(["croma"]);
 // Consecutive blocks before giving up on a store for this run.
 const MAX_CONSECUTIVE_BLOCKS = 5;
 const BATCH_SIZE = 50;
+// Extra "<model> <storage>" searches per model and store in variant mode.
+const MAX_STORAGE_SEARCHES = 4;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -176,9 +187,90 @@ async function discover(platform: string, p: JobProduct): Promise<Result | { mis
   }
 }
 
+/**
+ * Variant mode: one search per wording (both merged, since each shows ~20
+ * listings and the second often surfaces other colours), plus one per
+ * storage that other stores list but these results didn't show. Then
+ *   - the model row gets the cheapest listing (its base variant), unless
+ *     the dashboard has a manual URL for this store;
+ *   - each storage + colour gets its cheapest listing, in-stock first.
+ */
+async function collectVariants(
+  platform: string,
+  platformId: number,
+  p: JobProduct,
+  link: JobLink | undefined
+): Promise<{ results: Result[]; variants: number; seen: number }> {
+  const searcher = getSearcher(platform)!;
+  const model = p.ModelName || p.ItemName;
+  const byUrl = new Map<string, SearchHit>();
+  const add = (hits: SearchHit[]) => {
+    for (const h of hits) if (!byUrl.has(h.url)) byUrl.set(h.url, h);
+  };
+  const matched = () => matchingHits(model, p.Brand, [...byUrl.values()]);
+  for (const [i, query] of searchQueries(model, p.Brand).entries()) {
+    if (i > 0) await sleep(DELAY_MS);
+    add(await searcher.search(query));
+  }
+
+  // ~20 listings per search leave out bigger storages (Amazon and Reliance
+  // don't show the 1TB iPhone 17 Pro for "iPhone 17 Pro"), and some stores
+  // rank cases first. "iPhone 17 Pro 1TB" finds them.
+  const shown = new Set(matched().map((h) => variantKey(parseVariant(h.title, model, p.Brand))));
+  const storages = [
+    ...new Set(
+      (p.variants ?? [])
+        .filter((v) => !shown.has(variantKey({ ram: null, storage: v.Storage, color: v.Color })))
+        .map((v) => v.Storage)
+    ),
+  ];
+  for (const [i, storage] of storages.slice(0, MAX_STORAGE_SEARCHES).entries()) {
+    // A store that shows no listing of the model gets one try, not one per storage.
+    if (i === 1 && matched().length === 0) break;
+    await sleep(DELAY_MS);
+    try {
+      add(await searcher.search(`${model} ${storage}`));
+    } catch (err) {
+      // Keep what the earlier searches found.
+      if (err instanceof BlockedError) break;
+      throw err;
+    }
+  }
+
+  const matches = matched().filter((h) => h.price !== null);
+  const results: Result[] = [];
+
+  const best = pickBestHit(model, p.Brand, matches);
+  if (best && link?.UrlSource !== "manual") {
+    results.push({ ProductID: p.ProductID, PlatformID: platformId, ProductURL: best.url, MatchedTitle: best.title, Price: best.price!, MRP: best.mrp, Discount: null });
+  }
+
+  const groups = new Map<string, { hit: SearchHit; v: VariantInfo }>();
+  const inStock = (h: SearchHit) => h.inStock !== false;
+  for (const h of matches) {
+    const v = parseVariant(h.title, model, p.Brand);
+    const key = variantKey(v);
+    if (!key) continue;
+    const cur = groups.get(key);
+    const better =
+      !cur || (inStock(h) && !inStock(cur.hit)) || (inStock(h) === inStock(cur.hit) && h.price! < cur.hit.price!);
+    // Keep RAM from whichever listing of this variant states it.
+    if (better) groups.set(key, { hit: h, v: { ...v, ram: v.ram ?? cur?.v.ram ?? null } });
+    else if (!cur.v.ram && v.ram) cur.v.ram = v.ram;
+  }
+  for (const { hit, v } of groups.values()) {
+    results.push({
+      ProductID: p.ProductID, PlatformID: platformId, ProductURL: hit.url, MatchedTitle: hit.title,
+      Price: hit.price!, MRP: hit.mrp, Discount: null,
+      Variant: { RAM: v.ram, Storage: v.storage!, Color: v.color! },
+    });
+  }
+  return { results, variants: groups.size, seen: byUrl.size };
+}
+
 async function scanPlatform(platform: JobPlatform, products: JobProduct[], flush: (r: Result) => Promise<void>): Promise<PlatformStats> {
   const name = platform.PlatformName;
-  const stats: PlatformStats = { platform: name, priced: 0, newUrls: 0, misses: 0, failed: 0, blocked: 0, skippedOld: 0, aborted: null };
+  const stats: PlatformStats = { platform: name, priced: 0, newUrls: 0, misses: 0, failed: 0, blocked: 0, skippedOld: 0, variants: 0, aborted: null };
   const canSearch = getSearcher(name) !== null;
   let consecutiveBlocks = 0;
 
@@ -197,7 +289,24 @@ async function scanPlatform(platform: JobPlatform, products: JobProduct[], flush
     try {
       let result: Result | { miss: string } | null = null;
 
-      if (link) {
+      if (VARIANTS && canSearch) {
+        const found = await collectVariants(name, platform.PlatformID, p, link);
+        consecutiveBlocks = 0;
+        if (found.results.length === 0) {
+          if (!link) {
+            stats.misses++;
+            const reason = found.seen ? `no match in ${found.seen} results` : "no search results";
+            console.log(`${label}: not found — ${reason}`);
+            await flush({ ProductID: p.ProductID, PlatformID: platform.PlatformID, miss: true, reason });
+          }
+        } else {
+          stats.priced++;
+          stats.variants += found.variants;
+          const prices = found.results.map((r) => ("Price" in r ? r.Price : 0)).filter(Boolean);
+          console.log(`${label}: ${found.variants} variant(s), ₹${Math.min(...prices)}–₹${Math.max(...prices)}`);
+          for (const r of found.results) await flush(r);
+        }
+      } else if (link) {
         try {
           const parsed = await scrapePrice(name, link.ProductURL);
           result = { ProductID: p.ProductID, PlatformID: platform.PlatformID, ProductURL: link.ProductURL, Price: parsed.price!, MRP: parsed.mrp, Discount: parsed.discount };
@@ -209,7 +318,7 @@ async function scanPlatform(platform: JobPlatform, products: JobProduct[], flush
         }
       }
 
-      if (!result) {
+      if (!result && !(VARIANTS && canSearch)) {
         result = await discover(name, p);
         if (result && "ProductURL" in result) {
           result.PlatformID = platform.PlatformID;
@@ -249,13 +358,13 @@ async function scanPlatform(platform: JobPlatform, products: JobProduct[], flush
 
 function writeSummary(all: PlatformStats[]) {
   const rows = all.map(
-    (s) => `| ${s.platform} | ${s.priced} | ${s.newUrls} | ${s.misses} | ${s.failed} | ${s.blocked} | ${s.skippedOld} | ${s.aborted ?? ""} |`
+    (s) => `| ${s.platform} | ${s.priced} | ${s.variants} | ${s.newUrls} | ${s.misses} | ${s.failed} | ${s.blocked} | ${s.skippedOld} | ${s.aborted ?? ""} |`
   );
   const md = [
     `### Price scan${DRY_RUN ? " (dry run)" : ""}`,
     "",
-    "| Store | Priced | New URLs | Not found | Failed | Blocked | Skipped (old) | Note |",
-    "|---|---:|---:|---:|---:|---:|---:|---|",
+    "| Store | Priced | Variants | New URLs | Not found | Failed | Blocked | Skipped (old) | Note |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ...rows,
     "",
   ].join("\n");
@@ -293,6 +402,8 @@ async function main() {
 
   // Newest models first: they matter most and are likeliest to be listed.
   let products = [...jobs.products].sort((a, b) => (b.LaunchDate ?? "").localeCompare(a.LaunchDate ?? ""));
+  const onlyIds = new Set((option("products") ?? "").split(",").filter(Boolean).map(Number));
+  if (onlyIds.size > 0) products = products.filter((p) => onlyIds.has(p.ProductID));
   if (LIMIT > 0) products = products.slice(0, LIMIT);
   console.log(`${products.length} products × ${platforms.map((p) => p.PlatformName).join(", ")}${DRY_RUN ? " (dry run)" : ""}\n`);
 

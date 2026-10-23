@@ -63,6 +63,8 @@ export function ProductTable() {
         const all = await getProducts();
         const term = search.trim().toLowerCase();
         const matches = all.filter((p) => {
+          // The catalog lists models; their storage/colour variants show on the dashboard.
+          if (p.ParentProductID != null) return false;
           if (statusFilter === "active" && !p.IsActive) return false;
           if (statusFilter === "inactive" && p.IsActive) return false;
           if (!term) return true;
@@ -77,7 +79,7 @@ export function ProductTable() {
           total: matches.length,
         };
       }
-      const result = await getProductsPage(page + 1, pageSize);
+      const result = await getProductsPage(page + 1, pageSize, true);
       return { rows: result.data ?? [], total: result.total_records ?? 0 };
     };
 

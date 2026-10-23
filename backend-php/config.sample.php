@@ -30,5 +30,9 @@ return [
         'base_url'   => 'https://dotsmart-003-site10.gtempurl.com',
         // 1 = Smart Phones, 2 = Tablets, 3 = Smart Watches, 4 = Laptops.
         'device_ids' => [1],
+        // false: the sync only refreshes models already in the catalogue (the
+        // chosen 317 phones) and never adds new ones. true: GoFix's new models
+        // are added and scraped too.
+        'import_new_models' => false,
     ],
 ];

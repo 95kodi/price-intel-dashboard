@@ -20,7 +20,8 @@ function scrape_jobs(): array
     ], array_values(platforms_by_id()));
 
     $products = [];
-    foreach (q('SELECT ProductID, ExternalModelID, ItemName, Brand, ModelName, Category, LaunchDate FROM products WHERE IsActive = 1 ORDER BY ProductID')->fetchAll() as $p) {
+    // Models only: variants are found again from each store search.
+    foreach (q('SELECT ProductID, ExternalModelID, ItemName, Brand, ModelName, Category, LaunchDate FROM products WHERE IsActive = 1 AND ParentProductID IS NULL ORDER BY ProductID')->fetchAll() as $p) {
         $products[(int) $p['ProductID']] = [
             'ProductID'     => (int) $p['ProductID'],
             'ItemName'      => $p['ItemName'],
@@ -32,7 +33,16 @@ function scrape_jobs(): array
             'LaunchDate'    => $p['LaunchDate'],
             'links'         => [],
             'misses'        => [],
+            'variants'      => [],
         ];
+    }
+
+    // Storage + colour combinations any store has listed. A store whose plain
+    // search doesn't show one of them gets searched again by storage.
+    foreach (q("SELECT ParentProductID, StorageSize, ColorName FROM products WHERE ParentProductID IS NOT NULL AND IsActive = 1 AND StorageSize <> '' AND ColorName <> ''")->fetchAll() as $v) {
+        $id = (int) $v['ParentProductID'];
+        if (!isset($products[$id])) continue;
+        $products[$id]['variants'][] = ['Storage' => $v['StorageSize'], 'Color' => $v['ColorName']];
     }
 
     foreach (q('SELECT ProductPlatformID, ProductID, PlatformID, ProductURL, UrlSource, IsActive, LastCheckedAt FROM product_platforms')->fetchAll() as $l) {
@@ -60,6 +70,55 @@ function scrape_jobs(): array
         'platforms'   => $platforms,
         'products'    => array_values($products),
     ];
+}
+
+/** "cobalt  Violet" → "Cobalt Violet" */
+function color_label(string $c): string
+{
+    return ucwords(strtolower(trim(preg_replace('/\s+/', ' ', $c))));
+}
+
+/**
+ * The variant product (model + storage + colour) for a scraped listing,
+ * created on first sight. Storage and colour make the key; RAM is kept as
+ * an attribute, because some stores (Flipkart) leave it out of titles and the
+ * same phone would otherwise split into two variants.
+ */
+function variant_product_id(int $parentId, array $v, array &$cache): ?int
+{
+    $storage = strtoupper(str_replace(' ', '', str_val($v['Storage'] ?? '', 16)));
+    $color = color_label(str_val($v['Color'] ?? '', 60));
+    $ram = strtoupper(str_replace(' ', '', str_val($v['RAM'] ?? '', 16)));
+    if (!preg_match('/^\d+(GB|TB)$/', $storage) || $color === '') return null;
+
+    $words = preg_split('/\s+/', strtolower($color));
+    sort($words);
+    $key = strtolower($storage) . '|' . implode(' ', $words);
+    $cacheKey = "$parentId|$key";
+    if (isset($cache[$cacheKey])) return $cache[$cacheKey];
+
+    $parent = q('SELECT * FROM products WHERE ProductID = ?', [$parentId])->fetch();
+    $label = ($ram !== '' ? "$ram/" : '') . "$storage $color";
+
+    $existing = q('SELECT ProductID, RAM FROM products WHERE ParentProductID = ? AND VariantKey = ?', [$parentId, $key])->fetch();
+    if ($existing) {
+        // First seen on a store that omits RAM; fill it in once another store says.
+        if ($existing['RAM'] === '' && $ram !== '') {
+            q('UPDATE products SET RAM = ?, VariantName = ?, ItemName = ? WHERE ProductID = ?',
+              [$ram, $label, mb_substr($parent['ItemName'] . ' ' . $label, 0, 255), (int) $existing['ProductID']]);
+        }
+        return $cache[$cacheKey] = (int) $existing['ProductID'];
+    }
+
+    q(
+        'INSERT INTO products (ParentProductID, VariantKey, ItemCode, Brand, ModelName, RAM, StorageSize, ColorName,
+                               VariantName, ItemName, Category, SubCategory, LaunchDate, IsActive)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+        [$parentId, $key, mb_substr($parent['ItemCode'] . '-' . strtoupper(preg_replace('/[^a-z0-9]+/', '', $key)), 0, 64),
+         $parent['Brand'], $parent['ModelName'], $ram, $storage, $color, $label,
+         mb_substr($parent['ItemName'] . ' ' . $label, 0, 255), $parent['Category'], 'Variant', $parent['LaunchDate']]
+    );
+    return $cache[$cacheKey] = (int) db()->lastInsertId();
 }
 
 /** "https://www.flipkart.com" → "flipkart.com" */
@@ -92,6 +151,7 @@ function scrape_results(): array
     $activeProducts = array_flip(array_map('intval', q('SELECT ProductID FROM products WHERE IsActive = 1')->fetchAll(PDO::FETCH_COLUMN)));
     $stats = ['saved' => 0, 'created' => 0, 'relinked' => 0, 'misses' => 0, 'skipped' => 0];
     $errors = [];
+    $variantCache = [];
 
     foreach ($results as $i => $r) {
         try {
@@ -120,6 +180,13 @@ function scrape_results(): array
                 throw new InvalidArgumentException("URL is not on $domain");
             }
             $title = isset($r['MatchedTitle']) ? str_val($r['MatchedTitle'], 512) : null;
+
+            // A variant listing is stored against the variant product, not the model.
+            if (!empty($r['Variant']) && is_array($r['Variant'])) {
+                $variantId = variant_product_id($productId, $r['Variant'], $variantCache);
+                if ($variantId === null) throw new InvalidArgumentException('Variant needs Storage (e.g. 128GB) and Color');
+                $productId = $variantId;
+            }
 
             $existing = q('SELECT * FROM product_platforms WHERE ProductID = ? AND PlatformID = ?', [$productId, $platformId])->fetch();
             if ($existing && (!$existing['IsActive'] || ($existing['UrlSource'] === 'manual' && $existing['ProductURL'] !== $url))) {

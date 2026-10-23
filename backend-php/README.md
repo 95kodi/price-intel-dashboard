@@ -98,6 +98,28 @@ refuses to run once models have been synced, because old IDs would collide with 
 - The latest price is always stored on the listing. A `price_history` row is only added when
   the price or MRP changes, or once per day, so frequent scans don't flood the table.
 
+## Variants (storage + colour)
+
+With `--variants` (on in the scheduled workflow), the scraper records every
+storage + colour a store lists for a model, e.g. *iPhone 16 Pro 256GB Natural
+Titanium*. Each variant is a row in `products` with `ParentProductID` set to
+its model, `StorageSize` / `ColorName` (and `RAM` when a store states it), and
+`SubCategory = 'Variant'`. All routes treat it as a product, so the dashboard
+shows variant prices per store with no extra screens. The model row keeps the
+cheapest listing (its base variant).
+
+A store search shows about 20 listings, so a model's bigger storages often
+miss the cut (Amazon doesn't show the 1TB iPhone 17 Pro for "iPhone 17 Pro").
+`/scrape/jobs` therefore sends each model's known storage + colour
+combinations, and the scraper searches again by storage ("iPhone 17 Pro 1TB")
+for any combination the store's results didn't include. That's at most 4 extra
+searches per model and store.
+
+Stores name the same variant consistently enough to merge on storage +
+colour words (`VariantKey`, e.g. `256gb|natural titanium`). RAM isn't part of
+the key because Flipkart leaves it out of titles. On budget phones sold as
+4/128 and 6/128 in one colour, the cheaper of the two is kept.
+
 ## Model sync
 
 `POST /models/sync` (or the cron script `cron/sync-models.php`) reads
@@ -105,7 +127,9 @@ refuses to run once models have been synced, because old IDs would collide with 
 `deviceId` filter, so the sync filters by `device_ids` itself. Models are
 keyed on `ExternalModelID`. A re-sync updates brand, model name and launch date,
 but keeps your edits to `ItemName`, `IsActive` and `CurrentPrice`. Model names
-repeated under two GoFix ids are imported once.
+repeated under two GoFix ids are imported once. With `import_new_models`
+off (the default), the sync only refreshes models already in the catalogue
+(the chosen 317 phones from wb_models) and adds nothing new.
 
 ## Security notes
 

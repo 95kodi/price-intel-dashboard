@@ -94,12 +94,16 @@ jobs:
           SCRAPER_GATEWAY_URL: ${{ secrets.SCRAPER_GATEWAY_URL }}
           SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
           SCAN_SOURCE: GitHub Actions
+          # The catalogue is a chosen list that includes older best sellers
+          # (iPhone 12, Pixel 7a), so no model is too old to search for.
+          MAX_MODEL_AGE_YEARS: "0"
           PLATFORM: ${{ matrix.platform }}
           LIMIT: ${{ inputs.limit }}
           RESEARCH: ${{ inputs.research }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          args=(--platform "$PLATFORM")
+          # --variants: every storage + colour each store lists gets its own price.
+          args=(--platform "$PLATFORM" --variants)
           [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]] && args+=(--limit "$LIMIT")
           [ "$RESEARCH" = "true" ] && args+=(--research)
           [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
