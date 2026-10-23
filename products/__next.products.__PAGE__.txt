@@ -1,0 +1,7 @@
+1:"$Sreact.fragment"
+2:I[22706,["/_next/static/chunks/1wke9yxc2ys_p.js","/_next/static/chunks/1dmgyj3vyhymg.js","/_next/static/chunks/221le_jp_c90v.js","/_next/static/chunks/14mrh2-p_w84d.js","/_next/static/chunks/0hme3jp3n57hz.js"],"PageHeader"]
+3:I[93277,["/_next/static/chunks/1wke9yxc2ys_p.js","/_next/static/chunks/1dmgyj3vyhymg.js","/_next/static/chunks/221le_jp_c90v.js","/_next/static/chunks/14mrh2-p_w84d.js","/_next/static/chunks/0hme3jp3n57hz.js"],"ProductTable"]
+4:I[97367,["/_next/static/chunks/1wke9yxc2ys_p.js","/_next/static/chunks/1dmgyj3vyhymg.js","/_next/static/chunks/221le_jp_c90v.js","/_next/static/chunks/14mrh2-p_w84d.js"],"OutletBoundary"]
+5:"$Sreact.suspense"
+0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"children":[["$","$L2",null,{"title":"Product Catalog","meta":"Manage your tracked products"}],["$","div",null,{"className":"p-6","children":["$","$L3",null,{}]}]]}],[["$","script","script-0",{"src":"/_next/static/chunks/0hme3jp3n57hz.js","async":true}]],["$","$L4",null,{"children":["$","$5",null,{"name":"Next.MetadataOutlet","children":"$@6"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"V-p0A8gNZ5RtOE1vomUG2"}
+6:null
